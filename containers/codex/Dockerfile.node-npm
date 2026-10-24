@@ -1,0 +1,18 @@
+# trusted-host-v1: first build Dockerfile at the same source revision. Supply a
+# local tag whose resolved image ID is checked before/after this build, or a
+# supported immutable registry digest. A bare sha256:config-ID is not a FROM ref.
+# Dependency input is private build context only.
+ARG WORKER_IMAGE
+FROM ${WORKER_IMAGE}
+USER root
+WORKDIR /opt/workboard-node-profile
+COPY node-profile-input/package.json node-profile-input/package-lock.json ./
+COPY node-profile-input/scripts/check.js ./scripts/check.js
+COPY containers/codex/prepare-node-cache.mjs /opt/workboard-node-profile/prepare-cache.mjs
+RUN npm ci --ignore-scripts --no-audit --no-fund --cache /opt/workboard-node-cache \
+    && touch empty.npmrc \
+    && node prepare-cache.mjs \
+    && rm -rf node_modules prepare-cache.mjs \
+    && chmod -R a+rX,a-w /opt/workboard-node-cache /opt/workboard-node-profile
+USER 65532:65532
+WORKDIR /tmp

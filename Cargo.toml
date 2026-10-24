@@ -1,0 +1,36 @@
+[package]
+name = "workboard-rs"
+default-run = "workboard-rs"
+version = "0.1.0"
+license = "MIT"
+description = "A local-first AI agent workspace for planning, implementation, QA and GitHub delivery."
+repository = "https://github.com/agonza1/Software-Agent-Orchestrator"
+readme = "README.md"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync", "process", "io-util", "io-std", "fs"] }
+rusqlite = { version = "0.37", features = ["bundled", "backup"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+hmac = "0.12"
+fs2 = "0.4"
+libc = "0.2"
+sha2 = "0.10"
+shlex = "2.0.1"
+subtle = "2"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+async-stream = "0.3"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
