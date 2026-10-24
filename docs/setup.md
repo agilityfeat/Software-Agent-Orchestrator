@@ -30,9 +30,9 @@ make your whole home directory readable or grant the agent unrestricted access.
 The default runtime directory is outside this repository:
 
 - macOS: `~/Library/Application Support/software-agent-orchestrator`
-- Linux source path: `$XDG_DATA_HOME/software-agent-orchestrator`, falling back
-  to `~/.local/share/software-agent-orchestrator`. Linux is not yet a validated
-  supported execution platform.
+- Linux / WSL2: `$XDG_DATA_HOME/software-agent-orchestrator`, falling back
+  to `~/.local/share/software-agent-orchestrator`. See [Windows / WSL2 setup](windows.md)
+  for Linux dependencies and the current validation limits.
 
 State contains the database, keys, setup references and execution journals. It
 is private application data, not an exportable project template. Do not commit

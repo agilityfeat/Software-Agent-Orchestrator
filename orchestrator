@@ -31,6 +31,55 @@ def digest(path):
     with open(path, 'rb') as file:
         return hashlib.file_digest(file, 'sha256').hexdigest()
 
+def linux_path(path):
+    """WSL interop/Windows mounts cannot provide this starter's Unix boundary."""
+    if sys.platform != 'linux':
+        return
+    path = Path(path).expanduser().absolute().resolve()
+    if path == Path('/mnt') or Path('/mnt') in path.parents:
+        fail('Use the Linux filesystem (for example ~/projects), not /mnt or Windows drives; see docs/windows.md.')
+    # Also catch Windows drives mounted somewhere other than WSL's default /mnt.
+    try:
+        mounts = Path('/proc/self/mountinfo').read_text().splitlines()
+    except OSError:
+        fail('Cannot verify Linux mount boundaries; /proc/self/mountinfo must be available.')
+    selected = (0, '')
+    for line in mounts:
+        fields = line.split()
+        if len(fields) < 7 or '-' not in fields:
+            continue
+        sep = fields.index('-')
+        if len(fields) <= sep + 1:
+            continue
+        mount = fields[4]
+        for escaped, plain in ((r'\040', ' '), (r'\011', '\t'), (r'\012', '\n'), (r'\134', '\\')):
+            mount = mount.replace(escaped, plain)
+        point = Path(mount)
+        if (path == point or point in path.parents) and len(point.parts) >= selected[0]:
+            selected = (len(point.parts), fields[sep + 1])
+    if selected[1] in ('drvfs', '9p', 'ntfs', 'ntfs3', 'fuseblk', 'vfat', 'exfat', 'cifs'):
+        fail('Use a Linux-native filesystem for tools, source, state and credentials; see docs/windows.md.')
+
+def local_path_env():
+    paths = []
+    for value in os.environ.get('PATH', '/usr/bin:/bin').split(os.pathsep):
+        if not value or not Path(value).is_absolute():
+            continue
+        try:
+            linux_path(value)
+        except SetupError:
+            continue
+        paths.append(value)
+    return os.pathsep.join(paths)
+
+def executable_boundary(path):
+    linux_path(path)
+    if sys.platform == 'linux':
+        with open(path, 'rb') as file:
+            windows_binary = file.read(2) == b'MZ'
+        if path.suffix.lower() == '.exe' or windows_binary:
+            fail('Install Linux executables inside WSL; Windows .exe/PE tools are not supported. See docs/windows.md.')
+
 def default_state():
     if sys.platform == 'darwin':
         return Path.home() / 'Library/Application Support/software-agent-orchestrator'
@@ -38,6 +87,7 @@ def default_state():
 
 def canonical(path):
     path = Path(path).expanduser().absolute()
+    linux_path(path)
     if '..' in path.parts:
         fail('Use an absolute path without parent traversal.')
     for part in (path, *path.parents):
@@ -65,13 +115,15 @@ def write(path, value):
         os.fsync(file.fileno())
 
 def tool(value, name):
-    found = value or shutil.which(name)
+    found = value or shutil.which(name, path=local_path_env())
     if not found:
         fail('Install ' + name + ' or pass --' + name + ' with its absolute executable path.')
+    linux_path(found)
     path = Path(found).resolve(strict=True)
     meta = path.stat()
     if not path.is_file() or not os.access(path, os.X_OK) or meta.st_mode & 0o022:
         fail('Executable is missing or writable by other users: ' + name)
+    executable_boundary(path)
     return path
 
 def codex_native(value):
@@ -118,7 +170,7 @@ def codex_native(value):
     fail('Native Codex package is missing. Reinstall @openai/codex@' + CODEX_VERSION + ' or pass --codex with its native executable.')
 
 def clean_env(home=None):
-    return {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(home or Path.home()), 'LANG': 'C.UTF-8'}
+    return {'PATH': local_path_env(), 'HOME': str(home or Path.home()), 'LANG': 'C.UTF-8'}
 
 def quiet(argv, timeout=30):
     result = subprocess.run([str(x) for x in argv], env=clean_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
@@ -170,6 +222,10 @@ def verify(state):
         private_file(file)
         if digest(file) != data['files'][name]:
             fail('Saved setup changed. Refusing to repin or overwrite it.')
+    for name in ('codex_home', 'projects_root'):
+        linux_path(data['inputs'][name])
+    for root in data['inputs']['read_roots']:
+        linux_path(root)
     launch = json.loads((state / 'state/launch.json').read_bytes())
     for name in ('operator_key_file', 'setup_key_file'):
         private_file(Path(launch[name]))
@@ -178,6 +234,8 @@ def verify(state):
         fail('Setup has expired. Stop and preserve this state; prepare a separately reviewed renewal before continuing.')
     for path, expected in data['programs'].items():
         file = Path(path)
+        linux_path(file)
+        executable_boundary(file)
         if file.is_symlink() or digest(file) != expected:
             fail('A pinned program changed. Refusing automatic updates; stop and review a new setup.')
     return data, launch
@@ -223,12 +281,13 @@ def init(args):
         if args.binary_dir:
             build = canonical(args.binary_dir)
         else:
-            cargo_launcher = args.cargo or shutil.which('cargo')
+            cargo_launcher = args.cargo or shutil.which('cargo', path=local_path_env())
             tool(cargo_launcher, 'cargo')  # Validate target, but preserve rustup's argv[0] dispatch.
             cargo = Path(cargo_launcher).expanduser().absolute()
             env = clean_env()
             for name in ('CARGO_HOME', 'RUSTUP_HOME'):
                 if name in os.environ:
+                    linux_path(os.environ[name])
                     env[name] = os.environ[name]
             env['CARGO_TARGET_DIR'] = str(staging / 'build')
             command = [str(cargo), 'build', '--locked', '--release']
@@ -242,6 +301,7 @@ def init(args):
             source = build / name
             if source.is_symlink() or not source.is_file() or not os.access(source, os.X_OK):
                 fail('Missing release executable: ' + name)
+            executable_boundary(source)
             shutil.copyfile(source, staging / 'bin' / name)
             (staging / 'bin' / name).chmod(0o700)
         if not projects.is_relative_to(state):
@@ -275,6 +335,11 @@ def inputs_path(*tools):
     return ':'.join(dict.fromkeys([str(p.parent) for p in tools] + [p for p in ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'] if Path(p).is_dir()]))
 
 def main():
+    if sys.platform == 'win32':
+        fail('Native Windows is not supported. Open Ubuntu in WSL2 and follow docs/windows.md; do not run this with Windows Python.')
+    linux_path(ROOT)
+    linux_path(sys.executable)
+    linux_path(Path.home())
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     for command in ('init', 'start', 'doctor', 'key'):
