@@ -124,19 +124,48 @@ return 0;}
         (self.state/'secrets').chmod(0o755)
         self.cli('doctor', success=False)
 
-    def test_npm_wrapper_resolves_native_package_without_running_javascript(self):
+    def npm_alias_fixture(self):
         package=self.root/'node_modules/@openai/codex'
         (package/'bin').mkdir(parents=True)
-        (package/'package.json').write_text(json.dumps({'name':'@openai/codex','version':'0.153.4'}))
-        wrapper=package/'bin/codex.js';wrapper.write_text('#!/usr/bin/env node\nthrow new Error("must not execute wrapper")');wrapper.chmod(0o700)
         import platform
-        arch='aarch64' if platform.machine().lower() in ('arm64','aarch64') else 'x86_64'
-        target=arch+('-apple-darwin' if sys.platform=='darwin' else '-unknown-linux-musl')
-        binary=package/'vendor'/target/'bin/codex';binary.parent.mkdir(parents=True)
+        arch='arm64' if platform.machine().lower() in ('arm64','aarch64') else 'x64'
+        system='darwin' if sys.platform=='darwin' else 'linux'
+        suffix=system+'-'+arch
+        alias='@openai/codex-'+suffix
+        parent={'name':'@openai/codex','version':'0.153.4','optionalDependencies':{alias:'npm:@openai/codex@0.153.4-'+suffix}}
+        (package/'package.json').write_text(json.dumps(parent))
+        wrapper=package/'bin/codex.js';wrapper.write_text('#!/usr/bin/env node\nthrow new Error("must not execute wrapper")');wrapper.chmod(0o700)
+        payload=package.parent/('codex-'+suffix);payload.mkdir()
+        metadata={'name':'@openai/codex','version':'0.153.4-'+suffix}
+        (payload/'package.json').write_text(json.dumps(metadata))
+        target=('aarch64' if arch=='arm64' else 'x86_64')+('-apple-darwin' if system=='darwin' else '-unknown-linux-musl')
+        binary=payload/'vendor'/target/'bin/codex';binary.parent.mkdir(parents=True)
         shutil.copyfile(self.tools/'native',binary);binary.chmod(0o700)
+        return package,wrapper,payload,binary,parent,metadata,alias,suffix
+
+    def test_npm_wrapper_resolves_real_alias_without_running_javascript(self):
+        _,wrapper,_,binary,_,_,_,_=self.npm_alias_fixture()
         self.cli('init','--codex',wrapper,'--codex-home',self.auth,'--gh',self.tools/'gh','--git',shutil.which('git'),'--binary-dir',self.fake_bins)
         data=json.loads((self.state/'bootstrap.json').read_text())
         self.assertEqual(data['inputs']['codex'],str(binary))
+
+    def test_npm_alias_wrong_platform_version_or_identity_is_rejected(self):
+        _,wrapper,payload,_,_,metadata,_,suffix=self.npm_alias_fixture()
+        wrong_platform='linux' if suffix.startswith('darwin') else 'darwin'
+        for override in ({'version':'0.153.3-'+suffix}, {'version':'0.153.4-'+wrong_platform+'-'+suffix.split('-')[1]}, {'name':'@openai/codex-'+suffix}):
+            with self.subTest(metadata=override):
+                (payload/'package.json').write_text(json.dumps(dict(metadata,**override)))
+                self.cli('init','--codex',wrapper,'--codex-home',self.auth,'--gh',self.tools/'gh','--git',shutil.which('git'),'--binary-dir',self.fake_bins,success=False)
+                self.assertFalse(self.state.exists())
+
+    def test_npm_alias_must_match_parent_optional_dependency(self):
+        package,wrapper,_,_,parent,_,alias,suffix=self.npm_alias_fixture()
+        for mapping in ({}, {alias:'npm:@openai/codex@0.153.3-'+suffix}, {alias:'file:../unreviewed'}):
+            with self.subTest(mapping=mapping):
+                parent['optionalDependencies']=mapping
+                (package/'package.json').write_text(json.dumps(parent))
+                self.cli('init','--codex',wrapper,'--codex-home',self.auth,'--gh',self.tools/'gh','--git',shutil.which('git'),'--binary-dir',self.fake_bins,success=False)
+                self.assertFalse(self.state.exists())
 
     @unittest.skipUnless(os.environ.get('ORCHESTRATOR_TEST_BIN_DIR') or os.environ.get('ORCHESTRATOR_TEST_CARGO'), 'set ORCHESTRATOR_TEST_BIN_DIR to locally built host binaries for API onboarding')
     def test_real_server_paused_login_manual_task_and_live_update_refusal(self):

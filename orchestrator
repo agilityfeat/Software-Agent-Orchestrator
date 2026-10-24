@@ -92,12 +92,18 @@ def codex_native(value):
     target = {('darwin', 'arm64'): 'aarch64-apple-darwin', ('darwin', 'x64'): 'x86_64-apple-darwin', ('linux', 'arm64'): 'aarch64-unknown-linux-musl', ('linux', 'x64'): 'x86_64-unknown-linux-musl'}.get((sys.platform, arch))
     if not target:
         fail('Native bootstrap currently supports macOS/Linux x64/arm64 only.')
-    optional = 'codex-' + ('darwin' if sys.platform == 'darwin' else 'linux') + '-' + arch
+    suffix = ('darwin' if sys.platform == 'darwin' else 'linux') + '-' + arch
+    optional = 'codex-' + suffix
+    alias_version = CODEX_VERSION + '-' + suffix
+    expected_alias = 'npm:@openai/codex@' + alias_version
+    declared_alias = data.get('optionalDependencies', {}).get('@openai/' + optional)
     roots = [package / 'vendor']
     for candidate in (package / 'node_modules/@openai' / optional, package.parent / optional):
         try:
             dep = json.loads((candidate / 'package.json').read_bytes())
-            if dep.get('name') == '@openai/' + optional and dep.get('version') == CODEX_VERSION:
+            # npm installs this optional dependency under an alias directory, but
+            # its package identity/version remain @openai/codex@VERSION-PLATFORM.
+            if declared_alias == expected_alias and dep.get('name') == '@openai/codex' and dep.get('version') == alias_version:
                 roots.insert(0, candidate / 'vendor')
         except (OSError, ValueError):
             pass
