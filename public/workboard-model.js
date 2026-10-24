@@ -17,7 +17,7 @@ export function executionNotice(capabilities, connected = true, now = Date.now()
 }
 
 export function activityTitle(event) {
-  const stages = { prepare: "Preparing checkout", coder: "Coder stage", qa: "QA stage", deliver: "Delivery stage", awaiting_merge: "Waiting for manual merge", admitted: "Run admitted", admission: "Run admitted", dispatch: "Agent started", running: "Agent working", qa_ready: "Implementation ready for QA", repair_ready: "Repair requested after QA", awaiting_acceptance: "Result ready for acceptance", merged: "Pull request merged", quality: "Review evidence recorded", dispatch_uncertain: "Execution needs reconciliation", receipt_missing: "Execution receipt missing", deadline_exceeded: "Execution deadline reached" };
+  const stages = { research:"Researching sources",research_qa:"Reviewing exact research report",report_ready:"Research report delivered", prepare: "Preparing checkout", coder: "Coder stage", qa: "QA stage", deliver: "Delivery stage", awaiting_merge: "Waiting for manual merge", admitted: "Run admitted", admission: "Run admitted", dispatch: "Agent started", running: "Agent working", qa_ready: "Implementation ready for QA", repair_ready: "Repair requested after QA", awaiting_acceptance: "Result ready for acceptance", merged: "Pull request merged", quality: "Review evidence recorded", dispatch_uncertain: "Execution needs reconciliation", receipt_missing: "Execution receipt missing", deadline_exceeded: "Execution deadline reached" };
   if (stages[event.stage]) return stages[event.stage];
   if (/^qa_admitted_\d+$/.test(event.stage || "")) return "QA started";
   if (/^coder_admitted_\d+$/.test(event.stage || "")) return "Implementation started";
@@ -27,6 +27,9 @@ export function activityTitle(event) {
 
 export function executionReason(value) {
   const messages = {
+    research_result_invalid:"The research report or review could not be verified. Reconcile before retrying.",
+    research_qa_exhausted:"The report still has QA findings after its repair limit.",
+    research_repair_queued:"QA requested a report repair.",
     native_setup_blocked: "The coding agent could not finish project setup. Check the recorded setup failure before retrying.",
     native_validation_incomplete: "The agent did not complete the required project checks. This task has not passed validation.",
     native_validation_invalid: "The reported checks could not be matched to completed commands. Review the agent result before retrying.",
@@ -218,14 +221,14 @@ export function activityTime(value, now = Date.now()) {
 }
 
 export function automationLabel(task, latestRun) {
-  if (task.automation_policy === "ready_to_done" && task.automation_revision === task.revision) return task.repository ? "Queued for automatic processing" : "Enrolled for this revision; requires activated controller policy";
+  if (task.automation_policy === "ready_to_done" && task.automation_revision === task.revision) return task.repository || repositoryFreeResearch(task) ? "Queued for automatic processing" : "Enrolled for this revision; requires activated controller policy";
   if (Number.isSafeInteger(latestRun?.automation?.revision) && latestRun.automation.revision > 0) return `Automatically picked up from revision ${latestRun.automation.revision}`;
   return "Explicit Run";
 }
 
 export function kanbanMovePayload(task, target, runs = []) {
   if (task.archived_at || activeRun(task, runs) || !["backlog", "ready"].includes(task.status) || !["backlog", "ready"].includes(target) || task.status === target) return null;
-  if (target === "ready" && task.workflow === "engineering" && !task.repository && !task.project_id) return null;
+  if (target === "ready" && task.workflow === "engineering" && !task.repository && !task.project_id && !repositoryFreeResearch(task)) return null;
   return { expected_revision: task.revision, status: target, automation_policy: target === "ready" && task.workflow === "engineering" ? "ready_to_done" : "manual" };
 }
 
@@ -273,3 +276,5 @@ export function codingAgentSelection(config, task = null) {
   const requested = task?.coding_agent_id || config?.default_coder || "";
   return {agents, selected: agents.some(agent => agent.id === requested) ? requested : "", unavailable: Boolean(task?.coding_agent_id && !agents.some(agent => agent.id === task.coding_agent_id))};
 }
+
+export function repositoryFreeResearch(task){return task?.workflow==="engineering" && task?.task_type==="research" && !String(task?.repository||"").trim();}

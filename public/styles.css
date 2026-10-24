@@ -256,3 +256,5 @@ footer { flex-wrap: wrap; font-size: 11px; line-height: 1.5; }
 .task-card.dragging{opacity:.5}.board-column[data-drop-allowed="true"]{outline:1px dashed var(--mint);outline-offset:4px;border-radius:8px}
 .board-column.drop-over{background:#b6ebcb12}
 .stage-button[data-drop-allowed="true"]{outline:1px dashed var(--mint);outline-offset:2px}.stage-button.drop-over{background:#1d3026}
+
+.research-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.research-report .artifact-link{display:inline-block;margin-right:1rem}

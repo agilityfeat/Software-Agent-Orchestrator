@@ -53,3 +53,42 @@ Some low-level compatibility modules and optional container profiles remain in
 source. They are not required by the native starter path and do not install or
 activate any external runtime. Container assets use their own explicit build
 context; do not add credential directories to it.
+
+## Repository-free research
+
+A Research ticket with an empty repository freezes `kind=research` into its Run.
+Repository-backed Research keeps the coding workflow. There is one dedicated
+research lane alongside repository queues: uncertain research holds that lane
+without blocking unrelated repository work. Priority/oldest Ready/dependencies,
+immutable task/agent settings, one admission per revision, pause and deadlines
+remain enforced. Stop acknowledged before report persistence wins; restart
+requires cleanup/reconciliation and never automatically reruns the search.
+
+The signed native-only research policy bypasses repository discovery, Git,
+validation profiles and publisher. It uses an empty read-only scratch directory,
+no known-workspace/toolchain read roots and disabled local tool networking. The
+pinned CLI receives `--search` before `exec`, enabling provider-side built-in web
+search. Actual `item.completed` / `web_search` events and a completed turn are
+required; shell/file/MCP tools are rejected, including started forbidden items.
+The event contract is documented in the pinned
+[Codex0.153.4 source](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/exec/src/exec_events.rs).
+A completed search proves invocation/results returned, not that every source was
+read or every claim is true. Reports must state evidence and limitations.
+
+Reports are strict structured Markdown (8000bytes) and up to8 unique HTTP(S)
+source URLs/titles, at most12000serialized bytes. No model-selected filenames or
+arbitrary filesystem uploads are accepted. The authenticated UI displays text,
+and successful Runs expose generated attachment downloads at
+`GET /api/workboard/v1/runs/<id>/report.md` and `.../sources.json` with fixed
+content types and `nosniff`. Private report data persists with the Run/receipt.
+
+Research defaults to Skip QA, truthfully displayed as skipped. Required QA uses
+a distinct session to review the exact SHA256 of the structured report. Concrete
+bounded findings can return the same Run to research for at most2 repairs under
+the original deadline. Unknown/transport/auth/malformed results never authorize
+repair or Done. No Git SHA, test pass or PR is fabricated. Original approvals
+remain the cleanup authority even after host settings change or expire.
+
+Main may plan a goal with no repository; only Research proposals can be accepted
+from that plan. Acceptance still creates manual Backlog tickets and never starts
+implementation; Ready explicitly enrolls them. Coding proposals require a repo.

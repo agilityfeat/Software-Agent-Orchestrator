@@ -40,6 +40,14 @@ pub struct Receipt {
     pub out_of_scope_bugs: Option<Vec<crate::qa_feedback::OutOfScopeBug>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<crate::planning::Draft>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<crate::research::Report>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_findings: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_count: Option<u32>,
 }
 fn error(code: &'static str) -> ApiError {
     ApiError::unavailable(code)
@@ -186,7 +194,9 @@ impl App {
                         });
                         continue;
                     }
-                    if app.pick_project().unwrap_or(false) || app.pick_automatic().unwrap_or(false)
+                    if app.pick_research().unwrap_or(false)
+                        || app.pick_project().unwrap_or(false)
+                        || app.pick_automatic().unwrap_or(false)
                     {
                         app.changed();
                         continue;
@@ -443,6 +453,9 @@ async fn perform(app: &App, run: &Value, attempt: &Value) -> Result<(Value, Opti
     }
     if !observation && now_ms() >= run["deadline_ms"].as_i64().unwrap_or(0) {
         return Err(error("deadline_exceeded"));
+    }
+    if crate::research::is_run(run) {
+        return crate::research::perform(app, approval, run, attempt).await;
     }
     if !matches!(action, "prepare" | "cancel" | "observe") {
         verify_workspace(approval, run, false).await?;
@@ -975,13 +988,13 @@ pub(crate) async fn read_bounded<R: AsyncRead + Unpin>(
         output.extend_from_slice(&chunk[..n]);
     }
 }
-enum DriverOutcome {
+pub(crate) enum DriverOutcome {
     Completed(Box<Receipt>),
     PausedBeforeSpawn,
     StoppedBeforeSpawn,
     ShutdownBeforeSpawn,
 }
-async fn driver(
+pub(crate) async fn driver(
     app: &App,
     approval: &Approval,
     program: &Program,

@@ -12,6 +12,7 @@ pub mod ownership;
 pub mod planning;
 pub mod projects;
 pub mod qa_feedback;
+mod research;
 mod storage_ownership;
 mod store;
 pub mod system;
@@ -284,7 +285,7 @@ impl App {
             })
     }
     pub(crate) fn assert_automatic_run(&self, run: &Value) -> Result<()> {
-        if run["project_id"].is_string() {
+        if run["project_id"].is_string() || crate::research::is_run(run) {
             self.inner
                 .factory
                 .as_ref()
@@ -348,6 +349,21 @@ impl App {
         &self,
         task: &Value,
     ) -> Result<Option<execution_config::Approval>> {
+        if crate::research::eligible(task) {
+            let factory = self
+                .inner
+                .factory
+                .as_ref()
+                .ok_or_else(|| ApiError::unavailable("research_unavailable"))?;
+            let registry = {
+                let store = self.inner.store.lock().map_err(|_| ApiError::internal())?;
+                system::get(&store.db)?
+            };
+            return factory
+                .research_approval(task["id"].as_str().ok_or_else(ApiError::internal)?)?
+                .with_agents(registry.assignment(Some(task))?)
+                .map(Some);
+        }
         let base = self.task_approval(task)?;
         let Some(factory) = &self.inner.factory else {
             return Ok(base);
@@ -361,7 +377,7 @@ impl App {
             .transpose()
     }
     pub(crate) fn run_approval(&self, run: &Value) -> Result<execution_config::Approval> {
-        if run["project_id"].is_string() {
+        if run["project_id"].is_string() || crate::research::is_run(run) {
             return self.inner.factory.as_ref().ok_or_else(||ApiError::unavailable("project_runtime_unavailable"))?.approval(&json!({"approval_path":run["runtime_approval_path"],"approval_sha256":run["approval_sha256"]}));
         }
         self.inner
@@ -734,6 +750,54 @@ async fn handle(app: App, req: Request) -> Result<Response> {
                 .into_response());
         }
         let pieces: Vec<_> = path.split('/').collect();
+        if pieces.len() == 4
+            && pieces[1] == "runs"
+            && Uuid::parse_str(pieces[2]).is_ok()
+            && ["report.md", "sources.json"].contains(&pieces[3])
+        {
+            let run = self::execution_store::public_run(
+                app.inner
+                    .store
+                    .lock()
+                    .map_err(|_| ApiError::internal())?
+                    .current_run(pieces[2])?,
+            );
+            if !crate::research::is_run(&run) || run["status"] != "succeeded" {
+                return Err(ApiError::new(404, "report_not_ready"));
+            }
+            let report: crate::research::Report =
+                serde_json::from_value(run["report"].clone()).map_err(|_| ApiError::internal())?;
+            if report.digest()?.as_str() != run["report_digest"].as_str().unwrap_or("") {
+                return Err(ApiError::bad("research_result_invalid"));
+            }
+            let (body, content) = if pieces[3] == "report.md" {
+                (report.markdown, "text/markdown; charset=utf-8")
+            } else {
+                (
+                    serde_json::to_string_pretty(&report.sources)
+                        .map_err(|_| ApiError::internal())?,
+                    "application/json; charset=utf-8",
+                )
+            };
+            let mut response = body.into_response();
+            response
+                .headers_mut()
+                .insert(header::CONTENT_TYPE, HeaderValue::from_static(content));
+            response.headers_mut().insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&format!(
+                    "attachment; filename=\"research-{}-{}\"",
+                    pieces[2], pieces[3]
+                ))
+                .map_err(|_| ApiError::internal())?,
+            );
+            response.headers_mut().insert(
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            );
+            return Ok(response);
+        }
+
         if pieces.len() == 3 && pieces[1] == "tasks" && Uuid::parse_str(pieces[2]).is_ok() {
             let store = app.inner.store.lock().map_err(|_| ApiError::internal())?;
             return Ok(Json(json!({"task":store.task(pieces[2])?,"runs":store.runs(Some(pieces[2]))?,"events":store.events(0,Some(pieces[2]),true)?,"execution_activity":{"state":"available","tasks":{}}})).into_response());

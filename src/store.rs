@@ -429,6 +429,9 @@ impl Store {
         } else if fields.contains_key("coding_agent_id") && !task["coding_agent_id"].is_null() {
             return Err(ApiError::bad("coding_agent_unavailable"));
         }
+        if crate::research::eligible(&task) {
+            task["repository"] = Value::Null;
+        }
         validate(&task, preserve_done, admission.repository_queue)?;
         let prior_ready = !creating && get(&tx, id.unwrap())?["status"] == "ready";
         if task["status"] == "ready" {
@@ -605,7 +608,8 @@ pub(crate) fn validate(task: &Value, preserve_done: bool, repository_queue: bool
         return Err(ApiError::bad("invalid_delivery_policy"));
     }
     if task["workflow"] == "engineering" {
-        if !task["repository"].as_str().is_some_and(repository) {
+        if !crate::research::eligible(task) && !task["repository"].as_str().is_some_and(repository)
+        {
             return Err(ApiError::bad("invalid_repository"));
         }
         if ["active", "review"].contains(&task["status"].as_str().unwrap_or(""))

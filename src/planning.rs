@@ -134,6 +134,7 @@ struct Goal {
     goal: String,
     #[serde(default)]
     context: String,
+    #[serde(default)]
     repository: String,
     project: String,
 }
@@ -194,7 +195,8 @@ impl Store {
             if !text(&input.goal, 1, 8000)
                 || !text(&input.context, 0, 8000)
                 || !text(&input.project, 1, 160)
-                || !crate::store::valid_repository(&input.repository)
+                || (!input.repository.is_empty()
+                    && !crate::store::valid_repository(&input.repository))
             {
                 return Err(ApiError::bad("planning_input_invalid"));
             }
@@ -300,6 +302,9 @@ impl Store {
                     let id = new_ids[selected_index].clone();
                     let at = now();
                     let p = selected.proposal;
+                    if v["repository"] == "" && p.task_type != "research" {
+                        return Err(ApiError::bad("research_repository_required"));
+                    }
                     let dependencies: Vec<String> = p
                         .depends_on
                         .iter()
@@ -318,7 +323,7 @@ impl Store {
                     if !["required", "skip"].contains(&qa_policy.as_str()) {
                         return Err(ApiError::bad("planning_selection_invalid"));
                     }
-                    let task = json!({"id":id,"revision":1,"title":p.title,"objective":p.objective,"acceptance_criteria":p.acceptance_criteria,"priority":p.priority,"task_type":p.task_type,"labels":crate::tickets::labels(&p.labels)?,"dependencies":dependencies,"project":v["project"],"repository":v["repository"],"owner":"Coder","workflow":"engineering","status":"backlog","qa_policy":qa_policy,"merge_policy":"auto","automation_policy":"manual","automation_revision":null,"ready_at":null,"context":background(v["goal"].as_str().unwrap_or(""),v["context"].as_str().unwrap_or("")),"blocked_reason":null,"github_issue_url":null,"github_pull_request_url":null,"archived_at":null,"completed_at":null,"cancelled_at":null,"created_at":at,"updated_at":at,"source_plan":{"plan_id":v["id"],"proposal_id":selected.proposal_id,"plan_revision":input.expected_revision}});
+                    let task = json!({"id":id,"revision":1,"title":p.title,"objective":p.objective,"acceptance_criteria":p.acceptance_criteria,"priority":p.priority,"task_type":p.task_type,"labels":crate::tickets::labels(&p.labels)?,"dependencies":dependencies,"project":v["project"],"repository":if v["repository"]=="" {Value::Null}else{v["repository"].clone()},"owner":"Coder","workflow":"engineering","status":"backlog","qa_policy":qa_policy,"merge_policy":"auto","automation_policy":"manual","automation_revision":null,"ready_at":null,"context":background(v["goal"].as_str().unwrap_or(""),v["context"].as_str().unwrap_or("")),"blocked_reason":null,"github_issue_url":null,"github_pull_request_url":null,"archived_at":null,"completed_at":null,"cancelled_at":null,"created_at":at,"updated_at":at,"source_plan":{"plan_id":v["id"],"proposal_id":selected.proposal_id,"plan_revision":input.expected_revision}});
                     if serde_json::to_vec(&task).map_err(internal)?.len() > 32768 {
                         return Err(ApiError::bad("planning_selection_invalid"));
                     }

@@ -6,6 +6,26 @@ workspace=pathlib.Path(sys.argv[sys.argv.index('--cd')+1])
 cache=pathlib.Path(os.environ['HOME']).parent
 assert 'GH_TOKEN' not in os.environ and 'GITHUB_TOKEN' not in os.environ
 assert '--ignore-user-config' in sys.argv and '--ignore-rules' in sys.argv
+if mode.startswith('research'):
+ assert sys.argv[1:3]==['--search','exec']
+ assert '--skip-git-repo-check' in sys.argv
+ assert 'permissions.workboard-native.extends=":read-only"' in sys.argv
+ assert 'permissions.workboard-native.network.enabled=false' in sys.argv
+ assert 'shell_environment_policy.inherit="none"' in sys.argv
+ assert 'GH_TOKEN' not in os.environ and 'GITHUB_TOKEN' not in os.environ
+ assert list(workspace.iterdir())==[]
+ prompt=sys.stdin.read();assert 'No repository has been inspected' in prompt
+ qa='"passed"' in pathlib.Path(sys.argv[sys.argv.index('--output-schema')+1]).read_text()
+ assert ('Frozen research QA instruction' if qa else 'Frozen research coder instruction') in prompt
+ def emit(value):print(json.dumps(value),flush=True)
+ emit({'type':'thread.started','thread_id':str(uuid.uuid4())})
+ if mode=='research_tool':emit({'type':'item.started','item':{'id':'bad','type':'command_execution'}})
+ if mode!='research_no_search':emit({'type':'item.completed','item':{'id':'search_1','type':'web_search','query':'synthetic question','action':{'type':'search','query':'synthetic question'}}})
+ report={'markdown':'# Synthetic research report\nThe synthetic result has bounded conclusions and explicit uncertainty.','sources':[{'title':'Synthetic primary source','url':'javascript:invalid' if mode=='research_bad_url' else 'https://example.org/research'}]}
+ value={'passed':True,'findings':[]} if qa else report
+ emit({'type':'item.completed','item':{'id':'message','type':'agent_message','text':json.dumps(value)}})
+ if mode!='research_incomplete':emit({'type':'turn.completed'})
+ sys.exit(0)
 if not mode.startswith('plan'):
  assert 'permissions.workboard-native.extends=":workspace"' in sys.argv
  assert json.loads(pathlib.Path(sys.argv[sys.argv.index('--output-schema')+1]).read_text())['properties']['checks']['items']['properties']['command_id']=={'type':'null'}
@@ -14,6 +34,7 @@ assert len([a for a in sys.argv if a.startswith('permissions.workboard-native.fi
 assert len([a for a in sys.argv if a.startswith('projects={')])==1
 assert not any(a.startswith('permissions.workboard-native.filesystem.') or a.startswith('projects.') for a in sys.argv)
 if mode.startswith('plan'):
+ assert '--search' not in sys.argv
  assert '--skip-git-repo-check' in sys.argv
  assert 'permissions.workboard-native.extends=":read-only"' in sys.argv
  assert 'permissions.workboard-native.network.enabled=false' in sys.argv

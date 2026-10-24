@@ -37,9 +37,14 @@ replacement; unattended upgrades and renewal are not included in this first rele
 
 Main currently plans from the goal and context you provide; it does not inspect
 repository source. Coder discovers the repository and performs implementation.
-A Research ticket defaults to skipping independent QA, but Coder's relevant
-checks and delivery evidence remain required. Research still uses the repository
-workflow; this starter does not publish reports to external document systems.
+For a **Research** ticket, leave the repository blank to research a question and
+deliver a Markdown report with cited sources and downloadable `report.md` and
+`sources.json`. Ready starts the native research agent; no Git checkout, PR or
+merge is created. Research defaults to Skip QA. If Required QA is selected, a
+fresh independent session reviews the exact report digest and can request up to
+two repairs before completion. Supplying a repository keeps the existing coding
+workflow, including its implementation checks and delivery policy. External
+publishing to document systems is not included.
 
 ## Quick start
 
@@ -106,7 +111,7 @@ command (`init`, `doctor`, `start`, `key`). See [setup details](docs/setup.md).
 
 1. Open **System** and review Main, Coder and QA instructions. Keep model fields
    empty initially unless you know your account supports the chosen model.
-2. Resume launches. Create a small ticket with an exact `owner/repository`, a
+2. Resume launches. For coding work, create a small ticket with an exact `owner/repository`, a
    concrete objective and acceptance criteria. Use a repository your own GitHub
    account can push to.
 3. Choose **Wait for manual merge** for your first ticket. Required QA is the
@@ -117,7 +122,11 @@ command (`init`, `doctor`, `start`, `key`). See [setup details](docs/setup.md).
    session reviews the exact commit. In-scope failures can return to Coder within
    the repair limit. A human-merge ticket completes after its merge is observed.
 
-Alternatively, enter a goal under **Main**, review the proposals and accept the
+For research, choose **Research**, leave Repository empty, review the QA choice,
+and move it to Ready. The report appears in task detail after completion.
+
+Alternatively, enter a goal under **Main** (leave Repository blank for
+Research-only proposals), review the proposals and accept the
 ones you want. Accepted proposals start in Backlog; move them to Ready when you
 want execution. A Manual workflow ticket tracks work without starting an agent.
 
@@ -162,7 +171,8 @@ flowchart LR
     Delivery --> Done[Done]
 ```
 
-Research or explicitly skipped-QA tickets use Coder checks followed by delivery.
+Repository-backed tickets with skipped QA still require Coder checks before delivery.
+Repository-free Research uses web research → optional report QA → report delivered.
 The Rust coordinator owns revisions, stage transitions and publication evidence;
 a model's claim alone cannot mark a task delivered.
 

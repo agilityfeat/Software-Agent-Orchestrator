@@ -94,6 +94,12 @@ impl Factory {
             .as_mut()
             .ok_or_else(ApiError::internal)?;
         adapter.repository = repository.into();
+        if repository.is_empty() {
+            if adapter.native_agent.is_none() {
+                return Err(ApiError::unavailable("research_unavailable"));
+            }
+            adapter.research = true;
+        }
         adapter.validation_profile = None;
         adapter.state_root = adapter.state_root.join("planning");
         private_dir(&adapter.state_root)?;
@@ -114,6 +120,39 @@ impl Factory {
         let digest = digest_file(&path)?;
         Approval::load(&path, &self.key, &digest)?.verify(&digest, false)?;
         Ok(json!({"approval_path":path,"approval_sha256":digest}))
+    }
+    pub(crate) fn research_available(&self) -> bool {
+        self.verify().is_ok() && self.native_agents().is_some()
+    }
+    pub(crate) fn research_approval(&self, id: &str) -> Result<Approval> {
+        if !self.research_available() {
+            return Err(ApiError::unavailable("research_unavailable"));
+        }
+        let mut policy = self.setup.runtime.clone();
+        let adapter = policy
+            .adapter_policy
+            .as_mut()
+            .ok_or_else(ApiError::internal)?;
+        adapter.repository = String::new();
+        adapter.research = true;
+        adapter.validation_profile = None;
+        let path = adapter
+            .state_root
+            .join(format!("research-{id}-{}.json", uuid::Uuid::new_v4()));
+        let payload = serde_json::to_value(policy).map_err(internal)?;
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.key).map_err(internal)?;
+        mac.update(payload.to_string().as_bytes());
+        let value =
+            json!({"payload":payload,"signature":format!("{:x}",mac.finalize().into_bytes())});
+        use std::io::Write;
+        let mut f = crate::storage_ownership::private_options()
+            .create_new(true)
+            .open(&path)
+            .map_err(internal)?;
+        f.write_all(value.to_string().as_bytes())
+            .map_err(internal)?;
+        f.sync_all().map_err(internal)?;
+        Approval::load(&path, &self.key, &digest_file(&path)?)
     }
     pub(crate) fn native_agents(&self) -> Option<&crate::adapters::native::NativeAgentPolicy> {
         self.setup

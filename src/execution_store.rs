@@ -17,11 +17,11 @@ fn run(db: &Connection, id: &str) -> Result<Value> {
         .map_err(internal)?;
     serde_json::from_str(&row.ok_or_else(|| ApiError::new(404, "run_not_found"))?).map_err(internal)
 }
-fn save(db: &Connection, value: &Value) -> Result<()> {
+pub(crate) fn save(db: &Connection, value: &Value) -> Result<()> {
     db.execute("INSERT INTO runs(id,task_id,document) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET document=excluded.document",params![value["id"].as_str(),value["task_id"].as_str(),value.to_string()]).map_err(internal)?;
     Ok(())
 }
-fn event(db: &Connection, value: &Value, kind: &str) -> Result<()> {
+pub(crate) fn event(db: &Connection, value: &Value, kind: &str) -> Result<()> {
     let doc = json!({"type":kind,"run_id":value["id"],"task_id":value["task_id"],"status":value["status"],"stage":value["stage"],"reason":value["reason"],"at":now()});
     db.execute(
         "INSERT INTO events(task_id,document) VALUES(?1,?2)",
@@ -194,210 +194,221 @@ impl Store {
                 (200, json!({"execution":{"paused":body["paused"]}}))
             }
             "run" => {
-                if let Some(registry) = admission.agent_registry {
-                    registry.assignment(Some(&get(&tx, id.unwrap_or(""))?))?;
-                }
-                let approval =
-                    approval.ok_or_else(|| ApiError::unavailable("execution_unavailable"))?;
-                if let Some(config) = approval
-                    .policy
-                    .adapter_policy
-                    .as_ref()
-                    .and_then(|p| p.agent_config.as_ref())
-                {
-                    if crate::system::get(&tx)?.revision != config.revision {
-                        return Err(ApiError::conflict("agent_config_changed"));
+                let research_task = get(&tx, id.unwrap_or(""))?;
+                if crate::research::eligible(&research_task) {
+                    if let Some(registry) = admission.agent_registry {
+                        registry.assignment(Some(&research_task))?;
                     }
-                }
-                approval.verify(&approval.digest, false)?;
-                if fields.len() != 1 || body["expected_revision"].as_u64().is_none() {
-                    return Err(ApiError::conflict("revision_required"));
-                }
-                let mut task = get(&tx, id.unwrap_or(""))?;
-                if let Some(native) = approval
-                    .policy
-                    .adapter_policy
-                    .as_ref()
-                    .and_then(|p| p.native_agent.as_ref())
-                {
-                    task["coding_agent_id"] =
-                        json!(native.agent(task["coding_agent_id"].as_str(), false)?.id);
-                }
-                if approval.policy.adapter_policy.as_ref().is_some_and(|p| {
-                    !task["repository"]
-                        .as_str()
-                        .is_some_and(|r| p.repository.eq_ignore_ascii_case(r))
-                }) {
-                    return Err(ApiError::conflict("pilot_repository_mismatch"));
-                }
-                if let Some(guard) = ownership {
-                    guard
-                        .lock()
-                        .map_err(|_| ApiError::internal())?
-                        .assert(task["repository"].as_str().unwrap_or(""))?;
-                }
-                if task["revision"] != body["expected_revision"] {
-                    return Err(ApiError::conflict("revision_conflict"));
-                }
-                if task["workflow"] != "engineering"
-                    || !["ready"].contains(&task["status"].as_str().unwrap_or(""))
-                    || !task["blocked_reason"].is_null()
-                    || !task["archived_at"].is_null()
-                {
-                    return Err(ApiError::conflict("task_not_runnable"));
-                }
-                crate::tickets::validate_size(&task)?;
-                if !crate::tickets::blockers(&tx, &task)?.is_empty() {
-                    return Err(ApiError::conflict("dependencies_unmet"));
-                }
-                let (paused, lane): (bool, Option<String>) = tx
-                    .query_row(
-                        "SELECT paused,lane_run_id FROM execution WHERE singleton=1",
-                        [],
-                        |r| Ok((r.get(0)?, r.get(1)?)),
-                    )
-                    .map_err(internal)?;
-                if paused {
-                    return Err(ApiError::conflict("execution_paused"));
-                }
-                if lane.is_some() {
-                    return Err(ApiError::conflict("active_run_exists"));
-                }
-                let project = if let Some(id) = task["project_id"].as_str() {
-                    Some(crate::projects::get(&tx, id)?)
+                    crate::research::admit(&tx, &research_task, &body, approval)?
                 } else {
-                    crate::projects::by_repository(&tx, task["repository"].as_str().unwrap_or(""))?
-                };
-                if let Some(p) = &project {
-                    task["repository"] = p["repository"].clone();
-                    task["project_repository_id"] = p["repository_id"].clone();
-                    task["project_default_branch"] = p["default_branch"].clone();
-                }
-                if let Some(p) = &project {
-                    if p["paused"] != false {
-                        return Err(ApiError::conflict("project_paused"));
+                    if let Some(registry) = admission.agent_registry {
+                        registry.assignment(Some(&get(&tx, id.unwrap_or(""))?))?;
                     }
-                    if !p["lane_run_id"].is_null() {
-                        return Err(ApiError::conflict("active_run_exists"));
-                    }
-                    if task["project_id"].is_null()
-                        && (p["runtime_status"] != "configured"
-                            || p["checked_task_revision"]
-                                != format!(
-                                    "{}:{}",
-                                    task["id"].as_str().unwrap_or(""),
-                                    task["revision"]
-                                ))
-                    {
-                        return Err(ApiError::conflict("project_needs_preparation"));
-                    }
-                    let prior:i64=tx.query_row("SELECT count(*) FROM runs WHERE task_id=?1 AND json_extract(document,'$.task_revision')=?2",params![task["id"].as_str(),task["revision"].as_u64()],|r|r.get(0)).map_err(internal)?;
-                    let used:i64=tx.query_row("SELECT count(*) FROM runs WHERE json_extract(document,'$.project_id')=?1",[p["id"].as_str()],|r|r.get(0)).map_err(internal)?;
-                    if prior > 0 {
-                        return Err(ApiError::conflict("automatic_run_already_consumed"));
-                    }
-                    if used >= p["max_runs"].as_i64().unwrap_or(0) {
-                        return Err(ApiError::conflict("project_budget_exhausted"));
-                    }
-                    let expected = p["approval_sha256"].as_str().unwrap_or("");
+                    let approval =
+                        approval.ok_or_else(|| ApiError::unavailable("execution_unavailable"))?;
                     if let Some(config) = approval
                         .policy
                         .adapter_policy
                         .as_ref()
                         .and_then(|p| p.agent_config.as_ref())
                     {
-                        if config.base_approval_sha256.as_deref() != Some(expected) {
-                            return Err(ApiError::conflict("execution_approval_changed"));
+                        if crate::system::get(&tx)?.revision != config.revision {
+                            return Err(ApiError::conflict("agent_config_changed"));
                         }
-                        approval.verify(&approval.digest, false)?;
-                    } else {
-                        approval.verify(expected, false)?;
                     }
-                }
-                let repository_busy:i64=tx.query_row("SELECT count(*) FROM runs WHERE lower(json_extract(document,'$.repository'))=lower(?1) AND json_extract(document,'$.status') NOT IN ('succeeded','failed','cancelled')",[task["repository"].as_str()],|r|r.get(0)).map_err(internal)?;
-                if repository_busy > 0 {
-                    return Err(ApiError::conflict("active_run_exists"));
-                }
-                if project.is_none() {
-                    let active: i64 = tx
-                        .query_row("SELECT count(*) FROM project_lanes", [], |r| r.get(0))
+                    approval.verify(&approval.digest, false)?;
+                    if fields.len() != 1 || body["expected_revision"].as_u64().is_none() {
+                        return Err(ApiError::conflict("revision_required"));
+                    }
+                    let mut task = get(&tx, id.unwrap_or(""))?;
+                    if let Some(native) = approval
+                        .policy
+                        .adapter_policy
+                        .as_ref()
+                        .and_then(|p| p.native_agent.as_ref())
+                    {
+                        task["coding_agent_id"] =
+                            json!(native.agent(task["coding_agent_id"].as_str(), false)?.id);
+                    }
+                    if approval.policy.adapter_policy.as_ref().is_some_and(|p| {
+                        !task["repository"]
+                            .as_str()
+                            .is_some_and(|r| p.repository.eq_ignore_ascii_case(r))
+                    }) {
+                        return Err(ApiError::conflict("pilot_repository_mismatch"));
+                    }
+                    if let Some(guard) = ownership {
+                        guard
+                            .lock()
+                            .map_err(|_| ApiError::internal())?
+                            .assert(task["repository"].as_str().unwrap_or(""))?;
+                    }
+                    if task["revision"] != body["expected_revision"] {
+                        return Err(ApiError::conflict("revision_conflict"));
+                    }
+                    if task["workflow"] != "engineering"
+                        || !["ready"].contains(&task["status"].as_str().unwrap_or(""))
+                        || !task["blocked_reason"].is_null()
+                        || !task["archived_at"].is_null()
+                    {
+                        return Err(ApiError::conflict("task_not_runnable"));
+                    }
+                    crate::tickets::validate_size(&task)?;
+                    if !crate::tickets::blockers(&tx, &task)?.is_empty() {
+                        return Err(ApiError::conflict("dependencies_unmet"));
+                    }
+                    let (paused, lane): (bool, Option<String>) = tx
+                        .query_row(
+                            "SELECT paused,lane_run_id FROM execution WHERE singleton=1",
+                            [],
+                            |r| Ok((r.get(0)?, r.get(1)?)),
+                        )
                         .map_err(internal)?;
-                    if active > 0 {
+                    if paused {
+                        return Err(ApiError::conflict("execution_paused"));
+                    }
+                    if lane.is_some() {
                         return Err(ApiError::conflict("active_run_exists"));
                     }
-                }
-                if let Some(activation) = automatic {
-                    activation.verify(approval)?;
-                    if !activation.eligible(&task) {
-                        return Err(ApiError::conflict("automatic_run_not_eligible"));
+                    let project = if let Some(id) = task["project_id"].as_str() {
+                        Some(crate::projects::get(&tx, id)?)
+                    } else {
+                        crate::projects::by_repository(
+                            &tx,
+                            task["repository"].as_str().unwrap_or(""),
+                        )?
+                    };
+                    if let Some(p) = &project {
+                        task["repository"] = p["repository"].clone();
+                        task["project_repository_id"] = p["repository_id"].clone();
+                        task["project_default_branch"] = p["default_branch"].clone();
                     }
-                    let consumed:i64=tx.query_row("SELECT count(*) FROM automation_consumptions WHERE activation_sha256=?1",[&activation.digest],|r|r.get(0)).map_err(internal)?;
-                    let prior:i64=tx.query_row("SELECT count(*) FROM runs WHERE task_id=?1 AND json_extract(document,'$.task_revision')=?2",params![task["id"].as_str(),task["revision"].as_u64()],|r|r.get(0)).map_err(internal)?;
-                    if consumed > 0 || prior > 0 {
-                        return Err(ApiError::conflict("automatic_run_already_consumed"));
+                    if let Some(p) = &project {
+                        if p["paused"] != false {
+                            return Err(ApiError::conflict("project_paused"));
+                        }
+                        if !p["lane_run_id"].is_null() {
+                            return Err(ApiError::conflict("active_run_exists"));
+                        }
+                        if task["project_id"].is_null()
+                            && (p["runtime_status"] != "configured"
+                                || p["checked_task_revision"]
+                                    != format!(
+                                        "{}:{}",
+                                        task["id"].as_str().unwrap_or(""),
+                                        task["revision"]
+                                    ))
+                        {
+                            return Err(ApiError::conflict("project_needs_preparation"));
+                        }
+                        let prior:i64=tx.query_row("SELECT count(*) FROM runs WHERE task_id=?1 AND json_extract(document,'$.task_revision')=?2",params![task["id"].as_str(),task["revision"].as_u64()],|r|r.get(0)).map_err(internal)?;
+                        let used:i64=tx.query_row("SELECT count(*) FROM runs WHERE json_extract(document,'$.project_id')=?1",[p["id"].as_str()],|r|r.get(0)).map_err(internal)?;
+                        if prior > 0 {
+                            return Err(ApiError::conflict("automatic_run_already_consumed"));
+                        }
+                        if used >= p["max_runs"].as_i64().unwrap_or(0) {
+                            return Err(ApiError::conflict("project_budget_exhausted"));
+                        }
+                        let expected = p["approval_sha256"].as_str().unwrap_or("");
+                        if let Some(config) = approval
+                            .policy
+                            .adapter_policy
+                            .as_ref()
+                            .and_then(|p| p.agent_config.as_ref())
+                        {
+                            if config.base_approval_sha256.as_deref() != Some(expected) {
+                                return Err(ApiError::conflict("execution_approval_changed"));
+                            }
+                            approval.verify(&approval.digest, false)?;
+                        } else {
+                            approval.verify(expected, false)?;
+                        }
                     }
+                    let repository_busy:i64=tx.query_row("SELECT count(*) FROM runs WHERE lower(json_extract(document,'$.repository'))=lower(?1) AND json_extract(document,'$.status') NOT IN ('succeeded','failed','cancelled')",[task["repository"].as_str()],|r|r.get(0)).map_err(internal)?;
+                    if repository_busy > 0 {
+                        return Err(ApiError::conflict("active_run_exists"));
+                    }
+                    if project.is_none() {
+                        let active: i64 = tx
+                            .query_row("SELECT count(*) FROM project_lanes", [], |r| r.get(0))
+                            .map_err(internal)?;
+                        if active > 0 {
+                            return Err(ApiError::conflict("active_run_exists"));
+                        }
+                    }
+                    if let Some(activation) = automatic {
+                        activation.verify(approval)?;
+                        if !activation.eligible(&task) {
+                            return Err(ApiError::conflict("automatic_run_not_eligible"));
+                        }
+                        let consumed:i64=tx.query_row("SELECT count(*) FROM automation_consumptions WHERE activation_sha256=?1",[&activation.digest],|r|r.get(0)).map_err(internal)?;
+                        let prior:i64=tx.query_row("SELECT count(*) FROM runs WHERE task_id=?1 AND json_extract(document,'$.task_revision')=?2",params![task["id"].as_str(),task["revision"].as_u64()],|r|r.get(0)).map_err(internal)?;
+                        if consumed > 0 || prior > 0 {
+                            return Err(ApiError::conflict("automatic_run_already_consumed"));
+                        }
+                    }
+                    let run_id = Uuid::new_v4().to_string();
+                    let workspace = approval.policy.work_root.join(&run_id);
+                    let value = json!({"id":run_id,"task_id":task["id"],"task_revision":task["revision"],"repository":task["repository"],"task_snapshot":task,"approval_sha256":approval.digest,"workspace":workspace,"status":"admitted","stage":"prepare","base_sha":null,"head_sha":null,"coder_session":null,"qa_receipt":null,"pull_request_url":null,"merge_commit_sha":null,"reason":null,"last_attempt":null,"receipt_count":0,"reconcile_requested":false,"created_at":now(),"updated_at":now(),"deadline_ms":now_ms()+approval.policy.max_run_seconds as i64*1000});
+                    let mut value = value;
+                    if let Some(config) = approval
+                        .policy
+                        .adapter_policy
+                        .as_ref()
+                        .and_then(|p| p.agent_config.as_ref())
+                    {
+                        value["agents"] = config.public();
+                    }
+                    value["max_qa_repairs"] = json!(approval.policy.max_qa_repairs.unwrap_or(2));
+                    value["repair_count"] = json!(0);
+                    value["review_history"] = json!([]);
+                    value["session_history"] = json!([]);
+                    if let Some(activation) = automatic {
+                        value["automation"] = json!({"activation_sha256":activation.digest,"revision":task["revision"]});
+                    }
+                    if let Some(p) = &project {
+                        value["project_id"] = p["id"].clone();
+                        value["project_revision"] = p["revision"].clone();
+                        value["runtime_approval_path"] = json!(approval.path());
+                        value["automation"] =
+                            json!({"revision":task["revision"],"project_id":p["id"]});
+                    }
+                    save(&tx, &value)?;
+                    if let Some(activation) = automatic {
+                        tx.execute(
+                            "INSERT INTO automation_consumptions VALUES(?1,?2)",
+                            params![activation.digest, run_id],
+                        )
+                        .map_err(internal)?;
+                    }
+                    if let Some(mut p) = project {
+                        tx.execute(
+                            "INSERT INTO project_lanes VALUES(?1,?2,?3)",
+                            params![
+                                p["id"].as_str(),
+                                run_id,
+                                task["repository"].as_str().unwrap_or("").to_lowercase()
+                            ],
+                        )
+                        .map_err(internal)?;
+                        p["lane_run_id"] = json!(run_id);
+                        p["revision"] = json!(p["revision"].as_u64().unwrap_or(0) + 1);
+                        p["updated_at"] = json!(now());
+                        crate::projects::save(&tx, &p)?;
+                    } else {
+                        tx.execute(
+                            "UPDATE execution SET lane_run_id=?1 WHERE singleton=1",
+                            [&run_id],
+                        )
+                        .map_err(internal)?;
+                    }
+                    task["status"] = json!("active");
+                    task["revision"] = json!(task["revision"].as_u64().unwrap() + 1);
+                    task["updated_at"] = json!(now());
+                    persist(&tx, &task, "task.updated")?;
+                    event(&tx, &value, "run.created")?;
+                    (202, json!({"run":public_run(value)}))
                 }
-                let run_id = Uuid::new_v4().to_string();
-                let workspace = approval.policy.work_root.join(&run_id);
-                let value = json!({"id":run_id,"task_id":task["id"],"task_revision":task["revision"],"repository":task["repository"],"task_snapshot":task,"approval_sha256":approval.digest,"workspace":workspace,"status":"admitted","stage":"prepare","base_sha":null,"head_sha":null,"coder_session":null,"qa_receipt":null,"pull_request_url":null,"merge_commit_sha":null,"reason":null,"last_attempt":null,"receipt_count":0,"reconcile_requested":false,"created_at":now(),"updated_at":now(),"deadline_ms":now_ms()+approval.policy.max_run_seconds as i64*1000});
-                let mut value = value;
-                if let Some(config) = approval
-                    .policy
-                    .adapter_policy
-                    .as_ref()
-                    .and_then(|p| p.agent_config.as_ref())
-                {
-                    value["agents"] = config.public();
-                }
-                value["max_qa_repairs"] = json!(approval.policy.max_qa_repairs.unwrap_or(2));
-                value["repair_count"] = json!(0);
-                value["review_history"] = json!([]);
-                value["session_history"] = json!([]);
-                if let Some(activation) = automatic {
-                    value["automation"] =
-                        json!({"activation_sha256":activation.digest,"revision":task["revision"]});
-                }
-                if let Some(p) = &project {
-                    value["project_id"] = p["id"].clone();
-                    value["project_revision"] = p["revision"].clone();
-                    value["runtime_approval_path"] = json!(approval.path());
-                    value["automation"] = json!({"revision":task["revision"],"project_id":p["id"]});
-                }
-                save(&tx, &value)?;
-                if let Some(activation) = automatic {
-                    tx.execute(
-                        "INSERT INTO automation_consumptions VALUES(?1,?2)",
-                        params![activation.digest, run_id],
-                    )
-                    .map_err(internal)?;
-                }
-                if let Some(mut p) = project {
-                    tx.execute(
-                        "INSERT INTO project_lanes VALUES(?1,?2,?3)",
-                        params![
-                            p["id"].as_str(),
-                            run_id,
-                            task["repository"].as_str().unwrap_or("").to_lowercase()
-                        ],
-                    )
-                    .map_err(internal)?;
-                    p["lane_run_id"] = json!(run_id);
-                    p["revision"] = json!(p["revision"].as_u64().unwrap_or(0) + 1);
-                    p["updated_at"] = json!(now());
-                    crate::projects::save(&tx, &p)?;
-                } else {
-                    tx.execute(
-                        "UPDATE execution SET lane_run_id=?1 WHERE singleton=1",
-                        [&run_id],
-                    )
-                    .map_err(internal)?;
-                }
-                task["status"] = json!("active");
-                task["revision"] = json!(task["revision"].as_u64().unwrap() + 1);
-                task["updated_at"] = json!(now());
-                persist(&tx, &task, "task.updated")?;
-                event(&tx, &value, "run.created")?;
-                (202, json!({"run":public_run(value)}))
             }
             "cancel" | "reconcile" => {
                 if !fields.is_empty() {
@@ -447,7 +458,7 @@ impl Store {
             })
             .map_err(internal)?;
         let candidates = {
-            let mut q=tx.prepare("SELECT document FROM runs WHERE id IN (SELECT run_id FROM project_lanes UNION SELECT lane_run_id FROM execution WHERE lane_run_id IS NOT NULL) ORDER BY rowid").map_err(internal)?;
+            let mut q=tx.prepare("SELECT document FROM runs WHERE id IN (SELECT run_id FROM project_lanes UNION SELECT lane_run_id FROM execution WHERE lane_run_id IS NOT NULL UNION SELECT id FROM runs WHERE json_extract(document,'$.kind')='research' AND json_extract(document,'$.status') NOT IN ('succeeded','failed','cancelled')) ORDER BY rowid").map_err(internal)?;
             q.query_map([], |r| r.get::<_, String>(0))
                 .map_err(internal)?
                 .collect::<std::result::Result<Vec<_>, _>>()
@@ -495,11 +506,12 @@ impl Store {
         };
         let id = value["id"].as_str().unwrap().to_string();
         let action = action.as_str();
-        let driver = if matches!(action, "coder" | "qa" | "cancel") {
-            "worker"
-        } else {
-            "publisher"
-        };
+        let driver =
+            if crate::research::is_run(&value) || matches!(action, "coder" | "qa" | "cancel") {
+                "worker"
+            } else {
+                "publisher"
+            };
         let attempt = json!({"id":Uuid::new_v4().to_string(),"run_id":id,"action":action,"driver":driver,"state":"attempted","observed_action_id":value["last_attempt"],"at":now()});
         tx.execute(
             "INSERT INTO attempts VALUES(?1,?2,?3)",
@@ -545,6 +557,14 @@ impl Store {
             .map_err(internal)?,
         )
         .map_err(internal)?;
+        if crate::research::is_run(&current)
+            && current["status"] == "cancel_requested"
+            && attempt["action"] != "cancel"
+            && value["status"] != "cancelled"
+        {
+            // A report has no external publication to preserve against acknowledged Stop.
+            value["status"] = json!("cancel_requested");
+        }
         if current["status"] == "cancel_requested"
             && attempt["action"] != "cancel"
             && value["status"] != "succeeded"
