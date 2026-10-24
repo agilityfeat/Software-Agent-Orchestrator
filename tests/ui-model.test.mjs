@@ -376,3 +376,29 @@ test("drop handlers ignore external data and recheck live ownership while preser
   assert.equal(patches[0][0],"/tasks/queued");assert.deepEqual(JSON.parse(JSON.stringify(patches[0][2])),{expected_revision:4,status:"ready",automation_policy:"ready_to_done"});
   assert.equal(context.draggedTask,null);assert.equal(context.state.stage,"ready");assert.equal(ready.dataset.dropAllowed,undefined);
 });
+
+test("repository-free Research preserves automatic Ready/priority payloads without inventing Git authority",async()=>{
+ const {repositoryFreeResearch,defaultQaPolicy,activityTitle}=await import("../public/workboard-model.js");
+ const research={id:"research",revision:2,workflow:"engineering",task_type:"research",repository:null,status:"backlog",automation_policy:"ready_to_done",automation_revision:2};
+ assert.equal(repositoryFreeResearch(research),true);assert.equal(repositoryFreeResearch({...research,repository:"owner/repo"}),false);assert.equal(repositoryFreeResearch({...research,task_type:"feature"}),false);
+ assert.equal(defaultQaPolicy("research"),"skip");assert.equal(kanbanMovePayload(research,"ready").automation_policy,"ready_to_done");
+ assert.equal(cardPriorityPayload({...research,status:"ready"},1).automation_policy,"ready_to_done");
+ assert.equal(automationLabel(research),"Queued for automatic processing");
+ assert.equal(activityTitle({stage:"report_ready"}),"Research report delivered");
+ const payload=taskPayload({...research,title:"A research report",objective:"Cite sources",acceptance_criteria:"Bounded report",qa_policy:"required"});assert.equal(payload.repository,null);assert.equal(payload.qa_policy,"required");
+});
+
+
+test("Research editor explains report delivery without coding checks or repository queue copy",()=>{
+ const source=readFileSync(new URL("../public/workboard.js",import.meta.url),"utf8");
+ const definition=source.slice(source.indexOf("function updateWorkflowHint()"),source.indexOf("async function mutate("));
+ const option={textContent:""},nodes={};
+ const $=id=>nodes[id]??=(id==="#task-workflow"?{value:"engineering",querySelector:()=>option}:id==="#task-type"?{value:"research"}:id==="#task-repository"?{value:""}:{});
+ const context={$,state:{capabilities:{ready_to_done:true},codingAgents:{}},codingAgentSelection:()=>({agents:[]})};
+ runInNewContext(`${definition};updateWorkflowHint();`,context);
+ assert.equal(option.textContent,"Research · agent → report");assert.equal($("#task-repository").required,false);assert.equal($("#merge-policy-field").hidden,true);
+ assert.match($("#editor-queue-hint").textContent,/web research.*report/);assert.doesNotMatch($("#editor-queue-hint").textContent,/Coder|required checks|repository/);
+ $("#task-repository").value="owner/repo";runInNewContext("updateWorkflowHint()",context);
+ assert.match(option.textContent,/Engineering/);assert.equal($("#merge-policy-field").hidden,false);
+ assert.doesNotMatch(readFileSync(new URL("../public/index.html",import.meta.url),"utf8"),/Skip QA · Coder checks still required/);
+});

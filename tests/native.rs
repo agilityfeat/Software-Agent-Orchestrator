@@ -539,3 +539,55 @@ fn native_registry_model_and_instructions_reach_actual_cli_transport() {
     h.req["adapter_policy"]["agent_config"] = json!({"revision":7,"coder":{"id":"coder","label":"Configured coder","role":"coder","instructions":"Frozen registry operator instruction","model":"registry-model","enabled":true}});
     assert_eq!(h.ok()["passed"], true);
 }
+
+fn researcher(mode: &str) -> Harness {
+    let mut h = Harness::new(mode);
+    std::fs::remove_dir_all(h.req["workspace"].as_str().unwrap()).unwrap();
+    h.req["action"] = json!("research");
+    h.req["repository"] = json!("");
+    h.req["task_snapshot"]["repository"] = Value::Null;
+    h.req["task_snapshot"]["task_type"] = json!("research");
+    h.req["task_snapshot"]["qa_policy"] = json!("required");
+    h.req["base_sha"] = Value::Null;
+    h.req["head_sha"] = Value::Null;
+    h.req["adapter_policy"]["repository"] = json!("");
+    h.req["adapter_policy"]["research"] = json!(true);
+    h.req["adapter_policy"]["agent_config"] = json!({"revision":1,"coder":{"id":"coder","label":"Research Coder","role":"coder","instructions":"Frozen research coder instruction","model":"","enabled":true},"qa":{"id":"qa","label":"Research QA","role":"qa","instructions":"Frozen research QA instruction","model":"","enabled":true}});
+    h
+}
+#[test]
+fn native_research_search_report_and_independent_qa_use_readonly_scratch_and_system_settings() {
+    let mut h = researcher("research");
+    let report = h.ok();
+    assert_eq!(report["search_count"], 1);
+    assert!(report["head_sha"].is_null());
+    assert_eq!(report["role"], "coder");
+    assert!(!h.action().join("codex-home").exists());
+    assert!(!h.dir.join("catalog.json").exists());
+    h.req["action"] = json!("research_qa");
+    h.req["action_id"] = json!(Uuid::new_v4().to_string());
+    h.req["research_report"] = report["report"].clone();
+    let qa = h.ok();
+    assert_eq!(qa["role"], "qa");
+    assert_eq!(qa["passed"], true);
+    assert_eq!(qa["report_digest"], report["report_digest"]);
+    assert_ne!(qa["session_id"], report["session_id"]);
+    assert!(qa["pull_request_url"].is_null());
+}
+#[test]
+fn native_research_rejects_forbidden_started_tools_missing_search_invalid_sources_and_incomplete_turn()
+ {
+    for mode in [
+        "research_tool",
+        "research_no_search",
+        "research_bad_url",
+        "research_incomplete",
+    ] {
+        let h = researcher(mode);
+        let output = h.invoke();
+        assert!(!output.status.success(), "{mode}");
+        assert!(!h.action().join("native-receipt.json").exists());
+        assert!(h.action().join("cleanup.json").exists());
+        assert!(!h.action().join("codex-home").exists());
+    }
+}

@@ -52,6 +52,8 @@ pub struct AdapterPolicy {
     pub native_agent: Option<native::NativeAgentPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_config: Option<crate::system::Assignment>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub research: bool,
 }
 impl AdapterPolicy {
     pub fn validate(&self) -> Result<()> {
@@ -59,7 +61,8 @@ impl AdapterPolicy {
             config.validate()?;
         }
         if let Some(native) = &self.native_agent {
-            if !crate::store::valid_repository(&self.repository)
+            if !(crate::store::valid_repository(&self.repository)
+                || (self.research && self.repository.is_empty()))
                 || self.validation_profile.is_some()
             {
                 return Err(err("adapter_policy_invalid"));
@@ -137,6 +140,10 @@ pub struct Request {
     pub adapter_policy: AdapterPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repair_context: Option<crate::qa_feedback::Repair>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_report: Option<crate::research::Report>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research_findings: Option<Vec<String>>,
 }
 impl Request {
     fn validate(&self) -> Result<()> {
@@ -144,7 +151,10 @@ impl Request {
             || Uuid::parse_str(&self.run_id).is_err()
             || Uuid::parse_str(&self.action_id).is_err()
             || self.repository != self.adapter_policy.repository
-            || self.task_snapshot["repository"] != self.repository
+            || (self.task_snapshot["repository"] != self.repository
+                && !(self.adapter_policy.research
+                    && self.repository.is_empty()
+                    && self.task_snapshot["repository"].is_null()))
             || self.task_snapshot["workflow"] != "engineering"
             || self.task_snapshot["merge_policy"] != self.merge_policy
             || !["manual", "auto"].contains(&self.merge_policy.as_str())
@@ -152,6 +162,25 @@ impl Request {
             || !self.workspace.is_absolute()
             || self.workspace.file_name().and_then(|v| v.to_str()) != Some(&self.run_id)
         {
+            return Err(err("adapter_request_invalid"));
+        }
+        if self.adapter_policy.research {
+            if (self.action != "plan" && !crate::research::eligible(&self.task_snapshot))
+                || self.adapter_policy.native_agent.is_none()
+                || !["research", "research_qa", "cancel", "plan"].contains(&self.action.as_str())
+                || self.base_sha.is_some()
+                || self.head_sha.is_some()
+                || self.repair_context.is_some()
+            {
+                return Err(err("adapter_request_invalid"));
+            }
+            if let Some(report) = &self.research_report {
+                report.validate()?;
+            }
+            if self.action == "research_qa" && self.research_report.is_none() {
+                return Err(err("adapter_request_invalid"));
+            }
+        } else if ["research", "research_qa"].contains(&self.action.as_str()) {
             return Err(err("adapter_request_invalid"));
         }
         if self.action == "plan"
@@ -168,9 +197,18 @@ impl Request {
             }
             repair.validate(self.head_sha.as_deref().unwrap_or(""))?;
         }
-        if ["plan", "coder", "qa"].contains(&self.action.as_str()) {
+        if ["plan", "coder", "qa", "research", "research_qa"].contains(&self.action.as_str()) {
             if let Some(config) = &self.adapter_policy.agent_config {
-                if !config.agent(&self.action).is_some_and(|a| a.enabled) {
+                if !config
+                    .agent(if self.action == "research" {
+                        "coder"
+                    } else if self.action == "research_qa" {
+                        "qa"
+                    } else {
+                        &self.action
+                    })
+                    .is_some_and(|a| a.enabled)
+                {
                     return Err(err("agent_unavailable"));
                 }
             }
@@ -202,6 +240,10 @@ impl Request {
             qa_completed: None,
             out_of_scope_bugs: None,
             plan: None,
+            report: None,
+            report_digest: None,
+            research_findings: None,
+            search_count: None,
         }
     }
     fn scope(&self) -> Value {

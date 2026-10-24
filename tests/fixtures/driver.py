@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """SYNTHETIC ORCHESTRATION FIXTURE ONLY: never real worker/GitHub evidence."""
-import json, os, pathlib, subprocess, sys, time
+import hashlib, json, os, pathlib, subprocess, sys, time
 root=pathlib.Path(__file__).resolve().parent
 request=json.load(sys.stdin)
 mode=json.loads((root/'mode.json').read_text())
@@ -22,6 +22,8 @@ if action=='plan':
  if mode.get('plan_fields'):
   plan['tasks'][0].update(task_type='research',labels=['Discovery'],depends_on=[])
   plan['tasks'][1].update(task_type='feature',labels=['UI'],depends_on=[0])
+ if not request['repository']:
+  for task in plan['tasks']:task.update(task_type='research',labels=[],depends_on=[])
  if mode.get('bad_plan'):plan['tasks'][0]['repository']='foreign/authority'
  response.update(role='plan',session_id='plan-'+request['run_id'],plan=plan)
  if mode.get('unclean_plan'):response['cleanup_complete']=False
@@ -69,6 +71,17 @@ elif action=='qa':
    if mode.get('out_scope_missing_evidence'):bug['base_reproduction']=''
    bugs.append(bug)
   response['out_of_scope_bugs']=bugs
+elif action in ('research','research_qa'):
+ if mode.get('sleep_research'):time.sleep(mode['sleep_research'])
+ def report_digest(report):return hashlib.sha256(json.dumps(report,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+ response.update(role='coder' if action=='research' else 'qa',session_id=('research-'+request['run_id']+'-0' if mode.get('research_reused_session') else action+'-'+request['run_id']+'-'+str(cycle)),search_count=1,passed=True)
+ if action=='research':
+  report={'markdown':'# Synthetic research report\nA bounded synthetic conclusion with explicit uncertainty and source attribution.','sources':[{'title':'Synthetic primary source','url':'https://example.org/research'}]}
+  if mode.get('research_invalid_url'):report['sources'][0]['url']='javascript:invalid'
+  response.update(report=report,report_digest=report_digest(report))
+ else:
+  passed=cycle>=mode.get('research_rejections',0)
+  response.update(report_digest=report_digest(request['research_report']) if not mode.get('research_wrong_digest') else '0'*64,passed=passed,research_findings=[] if passed else ['Clarify the source-backed conclusion and its uncertainty.'])
 elif action=='deliver':
  merged=request['merge_policy']=='auto'
  response.update(head_sha=request['head_sha'],pull_request_url='https://github.com/'+request['repository']+'/pull/1',merged=merged)

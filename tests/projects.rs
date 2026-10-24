@@ -2176,3 +2176,359 @@ async fn kanban_ready_drop_enrolls_manual_processing_and_backlog_removes_it() {
     assert_eq!(runs[0]["evidence"]["qa_status"], "passed");
     h.stop().await;
 }
+
+async fn research_task(h: &Harness, name: &str, qa: &str, priority: u32) -> Value {
+    h.call("POST","/tasks",json!({"title":name,"objective":"Research a bounded synthetic question and report sources.","acceptance_criteria":["Explain conclusions and limitations with sources."],"workflow":"engineering","task_type":"research","qa_policy":qa,"status":"ready","automation_policy":"ready_to_done","priority":priority}),&uuid::Uuid::new_v4().to_string(),201).await["task"].clone()
+}
+#[tokio::test]
+async fn repository_free_research_reports_done_downloads_and_never_publishes() {
+    let mut h = Harness::new(json!({"native":true})).await;
+    let task = research_task(&h, "Research-only", "skip", 3).await;
+    h.call(
+        "PATCH",
+        &format!("/tasks/{}", task["id"].as_str().unwrap()),
+        json!({"expected_revision":1,"status":"done"}),
+        "no-fake-done",
+        503,
+    )
+    .await;
+    h.start().await;
+    let s = h
+        .wait(|s| {
+            s["tasks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t["id"] == task["id"] && t["status"] == "done")
+        })
+        .await;
+    assert!(s["projects"].as_array().unwrap().is_empty());
+    let run = &s["runs"][0];
+    assert_eq!(run["kind"], "research");
+    assert_eq!(run["evidence"]["qa_status"], "skipped");
+    assert!(run["head_sha"].is_null());
+    assert!(run["pull_request_url"].is_null());
+    assert_eq!(
+        h.audit()
+            .iter()
+            .map(|a| a["action"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["research"]
+    );
+    let path = format!("/runs/{}/report.md", run["id"].as_str().unwrap());
+    let response = h.request("GET", &path, Value::Null, None, true).await;
+    assert_eq!(response.status(), 200);
+    assert!(
+        response.headers()["content-disposition"]
+            .to_str()
+            .unwrap()
+            .contains("attachment")
+    );
+    assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&bytes).contains("Synthetic research report"));
+    assert_eq!(
+        h.request("GET", &path, Value::Null, None, false)
+            .await
+            .status(),
+        401
+    );
+    let source = h
+        .request(
+            "GET",
+            &format!("/runs/{}/sources.json", run["id"].as_str().unwrap()),
+            Value::Null,
+            None,
+            true,
+        )
+        .await;
+    assert_eq!(body(source).await[0]["url"], "https://example.org/research");
+    // A valid-shaped report edited outside its verified receipt must never be downloaded.
+    rusqlite::Connection::open(h.root.join("board.sqlite"))
+        .unwrap()
+        .execute(
+            "UPDATE runs SET document=json_set(document, '$.report.markdown', ?1) WHERE id=?2",
+            rusqlite::params![
+                "A different substantive report with no matching review digest.",
+                run["id"].as_str().unwrap()
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        h.request("GET", &path, Value::Null, None, true)
+            .await
+            .status(),
+        400
+    );
+    h.stop().await;
+}
+#[tokio::test]
+async fn repository_free_research_required_qa_repairs_exact_report_or_exhausts() {
+    for rejects in [1, 3] {
+        let mut h = Harness::new(json!({"native":true,"research_rejections":rejects})).await;
+        research_task(&h, &format!("Reviewed report{rejects}"), "required", 3).await;
+        h.start().await;
+        let s = h
+            .wait(|s| {
+                s["runs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| ["succeeded", "failed"].contains(&r["status"].as_str().unwrap_or("")))
+            })
+            .await;
+        let r = &s["runs"][0];
+        assert_eq!(
+            r["status"],
+            if rejects == 1 { "succeeded" } else { "failed" }
+        );
+        assert_eq!(r["repair_count"], if rejects == 1 { 1 } else { 2 });
+        assert_eq!(
+            r["review_history"].as_array().unwrap().len(),
+            if rejects == 1 { 2 } else { 3 }
+        );
+        assert!(
+            r["review_history"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|v| v["report_digest"] == r["report_digest"])
+        );
+        assert!(
+            h.audit()
+                .iter()
+                .all(|a| ["research", "research_qa"].contains(&a["action"].as_str().unwrap()))
+        );
+        h.stop().await;
+    }
+}
+#[tokio::test]
+async fn repository_free_research_invalid_result_reconciles_only_through_worker_cleanup() {
+    let mut h = Harness::new(json!({"native":true,"research_wrong_digest":true})).await;
+    research_task(&h, "Wrong digest", "required", 3).await;
+    h.start().await;
+    let s = h.wait(|s| s["runs"][0]["status"] == "unknown").await;
+    let id = s["runs"][0]["id"].as_str().unwrap();
+    h.call(
+        "POST",
+        "/execution/pause",
+        json!({"paused":true}),
+        "pause-research",
+        200,
+    )
+    .await;
+    h.call(
+        "POST",
+        &format!("/runs/{id}/reconcile"),
+        json!({}),
+        "reconcile-research",
+        202,
+    )
+    .await;
+    h.wait(|s| s["runs"][0]["status"] == "cancelled").await;
+    assert_eq!(
+        h.audit()
+            .iter()
+            .map(|a| a["action"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["research", "research_qa", "cancel"]
+    );
+    h.stop().await;
+}
+#[tokio::test]
+async fn repository_free_research_priority_fifo_dependencies_and_input_guards() {
+    let mut h = Harness::new(json!({"native":true})).await;
+    for value in [json!(42), json!([]), json!({})] {
+        h.call("POST","/tasks",json!({"title":"Bad repository","objective":"Reject invalid parameter","workflow":"engineering","task_type":"research","repository":value}),&uuid::Uuid::new_v4().to_string(),400).await;
+    }
+    h.call("POST","/tasks",json!({"title":"No repository feature","objective":"No fallback","workflow":"engineering","task_type":"feature"}),"feature-repo-required",400).await;
+    let no_priority = research_task(&h, "No priority report", "skip", 0).await;
+    let parent = research_task(&h, "Parent report", "skip", 3).await;
+    let child=h.call("POST","/tasks",json!({"title":"Urgent dependent","objective":"Wait for report parent","workflow":"engineering","task_type":"research","status":"ready","automation_policy":"ready_to_done","priority":1,"dependencies":[parent["id"]]}),"dependent-report",201).await["task"].clone();
+    h.start().await;
+    let s = h
+        .wait(|s| {
+            s["runs"].as_array().unwrap().len() == 3
+                && s["runs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|r| r["status"] == "succeeded")
+        })
+        .await;
+    let order: Vec<_> = s["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["task_id"].clone())
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            parent["id"].clone(),
+            child["id"].clone(),
+            no_priority["id"].clone()
+        ]
+    );
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn repository_free_main_accepts_only_research_then_ready_reports_done() {
+    let mut h = Harness::new(json!({"native":true,"planning_enabled":true})).await;
+    h.start().await;
+    h.call(
+        "POST",
+        "/plans",
+        json!({"goal":"Research a synthetic question","project":"Research"}),
+        "blank-repository-goal",
+        202,
+    )
+    .await;
+    let s = h.wait(|s| s["plans"][0]["status"] == "proposed").await;
+    let plan = &s["plans"][0];
+    let path = format!("/plans/{}/accept", plan["id"].as_str().unwrap());
+    let mut proposal = plan["proposals"][0].clone();
+    let pid = proposal
+        .as_object_mut()
+        .unwrap()
+        .remove("proposal_id")
+        .unwrap();
+    let mut bad = proposal.clone();
+    bad["task_type"] = json!("feature");
+    h.call("POST",&path,json!({"expected_revision":plan["revision"],"selected":[{"proposal_id":pid,"proposal":bad}]}),"reject-engineering-without-repo",400).await;
+    h.call(
+        "POST",
+        "/execution/pause",
+        json!({"paused":true}),
+        "pause-for-accept",
+        200,
+    )
+    .await;
+    let accepted=h.call("POST",&path,json!({"expected_revision":plan["revision"],"selected":[{"proposal_id":pid,"proposal":proposal}]}),"accept-research-proposal",200).await;
+    assert_eq!(h.snapshot().await["runs"].as_array().unwrap().len(), 0);
+    let tid = accepted["plan"]["accepted_task_ids"][0].as_str().unwrap();
+    let s = h.snapshot().await;
+    let task = s["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == tid)
+        .unwrap();
+    assert_eq!(task["status"], "backlog");
+    assert_eq!(task["qa_policy"], "skip");
+    assert!(task["repository"].is_null());
+    h.call(
+        "PATCH",
+        &format!("/tasks/{tid}"),
+        json!({"expected_revision":task["revision"],"status":"ready"}),
+        "ready-research-plan",
+        200,
+    )
+    .await;
+    h.call(
+        "POST",
+        "/execution/pause",
+        json!({"paused":false}),
+        "resume-research-plan",
+        200,
+    )
+    .await;
+    h.wait(|s| {
+        s["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["id"] == tid && t["status"] == "done")
+    })
+    .await;
+    assert_eq!(
+        h.audit()
+            .iter()
+            .map(|a| a["action"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["plan", "research"]
+    );
+    h.stop().await;
+}
+#[tokio::test]
+async fn repository_free_research_restart_unknown_does_not_replay_or_block_repository_queue() {
+    let mut h = Harness::new(json!({"native":true,"research_wrong_digest":true})).await;
+    h.repo("b");
+    let engineering=h.call("POST","/tasks",json!({"title":"Engineering in parallel","objective":"Synthetic independent repository","workflow":"engineering","repository":"fixture/b","status":"ready","automation_policy":"ready_to_done"}),"parallel-engineering",201).await["task"].clone();
+    research_task(&h, "Uncertain report", "required", 1).await;
+    h.start().await;
+    let s = h
+        .wait(|s| {
+            s["runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["kind"] == "research" && r["status"] == "unknown")
+                && s["tasks"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|t| t["id"] == engineering["id"] && t["status"] == "done")
+        })
+        .await;
+    let rid = s["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "research")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    h.stop().await;
+    let load = || {
+        Factory::load(
+            &h.root.join("setup.json"),
+            KEY.as_bytes(),
+            &digest_file(&h.root.join("setup.json")).unwrap(),
+        )
+        .unwrap()
+    };
+    let placeholder =
+        App::open_projects(&h.root.join("placeholder.sqlite"), KEY, 4311, load()).unwrap();
+    drop(std::mem::replace(&mut h.app, placeholder));
+    h.app = App::open_projects(&h.root.join("board.sqlite"), KEY, 4311, load()).unwrap();
+    h.engine = Some(h.app.start_execution());
+    let response = h
+        .request("POST", "/session", json!({"key":KEY}), None, false)
+        .await;
+    h.cookie = response.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .into();
+    h.csrf = body(response).await["csrf_token"].as_str().unwrap().into();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let research = h
+        .audit()
+        .iter()
+        .filter(|a| a["action"] == "research")
+        .count();
+    assert_eq!(research, 1);
+    h.call(
+        "POST",
+        &format!("/runs/{rid}/cancel"),
+        json!({}),
+        "stop-restored-research",
+        202,
+    )
+    .await;
+    h.wait(|s| {
+        s["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == rid && r["status"] == "cancelled")
+    })
+    .await;
+    assert_eq!(h.audit().last().unwrap()["action"], "cancel");
+    h.stop().await;
+}
