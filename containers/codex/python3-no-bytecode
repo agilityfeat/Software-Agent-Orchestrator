@@ -1,0 +1,4 @@
+#!/bin/sh
+# Fixed image wrapper: child processes may clear all inherited Python settings.
+export PYTHONDONTWRITEBYTECODE=1
+exec /usr/bin/python3 -B "$@"
