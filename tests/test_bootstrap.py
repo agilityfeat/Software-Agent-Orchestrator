@@ -2,6 +2,7 @@
 import http.client
 import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import signal
@@ -12,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / 'orchestrator'
@@ -166,6 +168,79 @@ return 0;}
                 (package/'package.json').write_text(json.dumps(parent))
                 self.cli('init','--codex',wrapper,'--codex-home',self.auth,'--gh',self.tools/'gh','--git',shutil.which('git'),'--binary-dir',self.fake_bins,success=False)
                 self.assertFalse(self.state.exists())
+
+    def linux_bootstrap(self):
+        scope = runpy.run_path(str(CLI), run_name='bootstrap_test')
+        original = Path.read_text
+        mounts = '1 0 0:1 / / rw - ext4 /dev/root rw\n'
+        self.enterContext(mock.patch.object(sys, 'platform', 'linux'))
+        self.enterContext(mock.patch.object(Path, 'read_text', lambda path, *args, **kw: mounts if str(path) == '/proc/self/mountinfo' else original(path, *args, **kw)))
+        return scope
+
+    def test_native_windows_refuses_before_unix_calls_or_state(self):
+        scope = runpy.run_path(str(CLI), run_name='bootstrap_test')
+        with mock.patch.object(sys, 'platform', 'win32'), mock.patch.object(os, 'getuid', side_effect=AssertionError('Unix API reached')):
+            with self.assertRaisesRegex(scope['SetupError'], 'WSL2'):
+                scope['main']()
+        self.assertFalse(self.state.exists())
+
+    def test_linux_rejects_windows_overrides_before_install(self):
+        scope = self.linux_bootstrap()
+        for name in ('state_dir', 'codex_home', 'projects_root', 'read_root', 'binary_dir', 'codex', 'gh', 'git', 'cargo'):
+            with self.subTest(override=name):
+                args = dict(state_dir=self.state, codex_home=self.auth, projects_root=None, read_root=None, binary_dir=self.fake_bins, codex=self.tools/'codex', gh=self.tools/'gh', git=Path(shutil.which('git')), cargo=None, port=4311)
+                args[name] = [Path('/mnt/c/sdk')] if name == 'read_root' else Path('/mnt/c/unsafe')
+                if name == 'cargo': args['binary_dir'] = None
+                with self.assertRaisesRegex(scope['SetupError'], 'Linux filesystem'):
+                    scope['init'](type('Args', (), args)())
+                self.assertFalse(self.state.exists())
+
+    def test_linux_custom_windows_mount_symlink_and_missing_proc_refuse(self):
+        scope = self.linux_bootstrap()
+        original = Path.read_text
+        mounts = '1 0 0:1 / / rw - ext4 /dev/root rw\n2 1 0:2 / /custom\\040drive rw - 9p C: rw\n'
+        with mock.patch.object(Path, 'read_text', lambda path, *a, **kw: mounts if str(path) == '/proc/self/mountinfo' else original(path, *a, **kw)):
+            with self.assertRaisesRegex(scope['SetupError'], 'Linux-native'):
+                scope['canonical']('/custom drive/accounts')
+        link = self.root/'windows-link';link.symlink_to('/mnt/c/unsafe')
+        with self.assertRaisesRegex(scope['SetupError'], 'Linux filesystem'):
+            scope['tool'](link, 'codex')
+        with mock.patch.object(Path, 'read_text', side_effect=OSError('missing proc')):
+            with self.assertRaisesRegex(scope['SetupError'], 'Cannot verify'):
+                scope['canonical']('/home/linux')
+
+    def test_linux_filters_path_and_refuses_pe_or_exe_tools(self):
+        scope = self.linux_bootstrap()
+        with mock.patch.dict(os.environ, {'PATH':'/mnt/c/windows:/usr/bin:.:/bin'}):
+            self.assertEqual(scope['clean_env']()['PATH'], '/usr/bin:/bin')
+        for filename, content in (('gh', b'MZnot-linux'), ('git.exe', b'not-pe')):
+            path = self.root/filename;path.write_bytes(content);path.chmod(0o700)
+            with self.assertRaisesRegex(scope['SetupError'], 'Windows .exe/PE'):
+                scope['tool'](path, 'gh')
+        self.assertEqual(scope['canonical'](self.state), self.state)
+
+    def test_linux_checks_checkout_interpreter_home_and_default_xdg(self):
+        scope = self.linux_bootstrap()
+        with mock.patch.dict(scope['main'].__globals__, {'ROOT':Path('/mnt/c/checkout')}):
+            with self.assertRaisesRegex(scope['SetupError'], 'Linux filesystem'): scope['main']()
+        with mock.patch.object(sys, 'executable', '/mnt/c/python'):
+            with self.assertRaisesRegex(scope['SetupError'], 'Linux filesystem'): scope['main']()
+        with mock.patch.object(Path, 'home', return_value=Path('/mnt/c/user')):
+            with self.assertRaisesRegex(scope['SetupError'], 'Linux filesystem'): scope['main']()
+        with mock.patch.dict(os.environ, {'XDG_DATA_HOME':'/mnt/c/data'}), mock.patch.object(sys, 'argv', [str(CLI), 'doctor']):
+            with self.assertRaisesRegex(scope['SetupError'], 'Linux filesystem'): scope['main']()
+        self.assertFalse(self.state.exists())
+
+    def test_linux_start_doctor_recheck_saved_program_boundary(self):
+        self.init()
+        scope = self.linux_bootstrap()
+        data = json.loads((self.state/'bootstrap.json').read_text())
+        data['programs']['/mnt/c/old-setup/workboard-rs'] = '0'*64
+        (self.state/'bootstrap.json').write_text(json.dumps(data))
+        for command in ('start', 'doctor'):
+            with self.subTest(command=command), mock.patch.object(sys, 'argv', [str(CLI), command, '--state-dir', str(self.state)]):
+                with self.assertRaisesRegex(scope['SetupError'], 'Linux filesystem'):
+                    scope['main']()
 
     @unittest.skipUnless(os.environ.get('ORCHESTRATOR_TEST_BIN_DIR') or os.environ.get('ORCHESTRATOR_TEST_CARGO'), 'set ORCHESTRATOR_TEST_BIN_DIR to locally built host binaries for API onboarding')
     def test_real_server_paused_login_manual_task_and_live_update_refusal(self):

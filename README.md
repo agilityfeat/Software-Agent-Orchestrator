@@ -12,8 +12,9 @@ Codex and GitHub accounts. No n8n, Node server, frontend build, private service,
 or Docker image is required for the normal starter path.
 
 This is an early **single-user local starter**. macOS is the initial validation
-platform. The source uses Unix APIs; Linux execution/sandbox compatibility needs
-separate validation. Windows is not supported. This is not a hosted multi-user
+platform. Windows users run the Linux application inside **WSL2 Ubuntu**; see
+[Windows setup](docs/windows.md). Native Windows executables are not supported.
+The WSL2 path has not been validated on a physical Windows host. This is not a hosted multi-user
 service. Setup is pinned for one year and refuses silent tool/configuration
 replacement; unattended upgrades and renewal are not included in this first release.
 
@@ -44,7 +45,8 @@ workflow; this starter does not publish reports to external document systems.
 
 Prerequisites:
 
-- macOS with Command Line Tools and Git.
+- macOS with Command Line Tools and Git, or WSL2 Ubuntu with the
+  [Linux prerequisites](docs/windows.md).
 - Rust/Cargo **1.85 or newer**, Python **3.11 or newer**, GitHub CLI (`gh`).
 - Codex CLI **0.153.4**, authenticated with your own account. The execution-event
   and permission-policy contract is version-specific; newer versions need testing.
@@ -170,6 +172,14 @@ a model's claim alone cannot mark a task delivered.
 - [Contributing and local tests](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 
-MIT licensed. This standalone starter includes generic application source only;
+## Reuse and license
+
+You may use this code personally or commercially, modify it, redistribute it,
+and include it in your own projects under the [MIT License](LICENSE). Keep the
+copyright notice and MIT permission notice in copies or substantial portions.
+The software is provided without warranty; see the license for its full terms.
+Your Codex/GitHub accounts and third-party dependencies retain their own terms.
+
+This standalone starter includes generic application source only;
 it does not include a personal operating environment or the broader business
 integration system from which it was extracted.
