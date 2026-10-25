@@ -30,7 +30,7 @@ export function criteria(rule) {
   return [
     `Submitted expenses above ${money(rule.thresholdCents)} need manager review; exactly the threshold remains eligible.`,
     'Paid expenses stay paid, with approval disabled.',
-    'Every result includes a nonempty explanation and a correct canApprove boolean.',
+    'Every result includes a clear explanation; approval is available only for eligible expenses.',
     ...(rule.receiptCents === null ? ['No receipt requirement is enabled. Missing receipts must not change the result: only the manager approval threshold applies, and paid expenses stay paid.'] : [`Missing receipts above ${money(rule.receiptCents)} take priority over manager review.`]),
   ];
 }

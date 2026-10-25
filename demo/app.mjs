@@ -1,5 +1,6 @@
+import {DEFAULT_REQUEST,policyFromPrompt} from './prompt-policy.mjs';
 import {renderAgents} from './agent-activity.mjs';
-import {BASE_SOURCE,EXPENSES,money,policy,criteria,baselineOutputs,checkOutput,canAccept,score} from './core.mjs';
+import {BASE_SOURCE,EXPENSES,money,criteria,baselineOutputs,checkOutput,canAccept,score} from './core.mjs';
 import {Controller} from './controller.mjs';
 import {execute,cancelAll} from './sandbox.mjs';
 import {LocalModel} from './model.mjs';
@@ -15,7 +16,8 @@ function persist(){const value={schema:1,accepted,task:controller.task,history:h
 function mode(){return $('mode').value;}
 function updateControls(){
   const busy=controller.busy||loading,t=controller.task;
-  ['request','threshold','receipt','mode','reset','model-file'].forEach(id=>$(id).disabled=busy);
+  ['request','mode','reset','model-file'].forEach(id=>$(id).disabled=busy);
+  $('request').disabled=busy||mode()==='recorded';
   $('plan').disabled=busy||mode()==='recorded'||(mode()==='live'&&!model.ready);
   $('run').disabled=busy||t?.status!=='Ready'||t?.mode!==mode();
   $('run').hidden=t?.status==='Review'||t?.status==='Done';
@@ -40,9 +42,9 @@ function renderArtifact(){
   const body=$('artifact-body'),t=controller.task;body.replaceChildren();
   document.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('selected',b.dataset.tab===tab);b.setAttribute('aria-selected',String(b.dataset.tab===tab));});
   $('artifact-title').textContent=t?.phase||'A clear contract comes first';
-  if(!t){body.append(text('p','Start with the $500 policy or change the thresholds. The planner proposes a small task. You authorize implementation.'));const list=text('ul','');['Same downloaded model for every role','Real tests, not model-generated pass/fail','At most two corrections; you accept the result'].forEach(x=>list.append(text('li',x)));body.append(list);return;}
+  if(!t){body.append(text('p','Describe your expense policy above. The team will turn it into a plan for you to review.'));const list=text('ul','');['Same downloaded model for every role','Real tests, not model-generated pass/fail','At most two corrections; you accept the result'].forEach(x=>list.append(text('li',x)));body.append(list);return;}
   if(tab==='plan'){
-    body.append(text('p',t.plan?.summary||'The planner is preparing the work…'));const list=text('ol','');for(const step of t.plan?.steps||[])list.append(text('li',step));body.append(list,text('h4','Protected acceptance criteria'));const checks=text('ul','');criteria(t.rule).forEach(c=>checks.append(text('li',c)));body.append(checks);
+    body.append(text('p',t.plan?.summary||'The planner is preparing the work…'));const list=text('ol','');for(const step of t.plan?.steps||[])list.append(text('li',step));body.append(list,text('h4','What the change must do'));const checks=text('ul','');criteria(t.rule).forEach(c=>checks.append(text('li',c)));body.append(checks);
     if(t.mode==='guided')body.append(text('p','Guided example intentionally starts with a >= boundary bug. Agents are scripted; the runner executes the actual candidate.','muted'));
   } else if(tab==='code'){
     body.append(text('h4','Accepted source at task start'),text('pre',t.base),text('h4',`Candidate ${t.hash?.slice(0,12)||'not generated'}`),text('pre',t.candidate||'No candidate yet.'));
@@ -92,14 +94,15 @@ async function refreshCandidate(){
   candidateResults=results;preview='candidate';render();
 }
 async function safely(action){notice();try{await action();}catch(error){notice(String(error.message||error));}finally{render();}}
-$('request-form').onsubmit=event=>{event.preventDefault();safely(async()=>{candidateResults=null;preview='accepted';await controller.plan({request:$('request').value,rule:policy($('threshold').value,$('receipt').value),mode:mode(),base:accepted});});};
+$('request-form').onsubmit=event=>{event.preventDefault();safely(async()=>{const request=$('request').value;let rule;try{rule=policyFromPrompt(request);}catch(error){controller.task=null;candidateResults=null;preview='accepted';persist();throw error;}candidateResults=null;preview='accepted';tab='plan';await controller.plan({request,rule,mode:mode(),base:accepted});});};
+$('request').oninput=()=>{if(controller.busy||mode()==='recorded'||!controller.task)return;controller.task=null;candidateResults=null;preview='accepted';render();persist();};
 $('run').onclick=()=>safely(async()=>{loading=true;updateControls();try{await controller.run();await refreshCandidate();if(controller.task.mode==='live'){history.push(structuredClone(controller.task));persist();}tab='tests';}finally{loading=false;}});
 $('accept').onclick=()=>safely(async()=>{loading=true;updateControls();try{const task=controller.task,source=task.candidate,values=await execute(source,EXPENSES);if(task!==controller.task||source!==task.candidate)throw Error('Preview validation failed; nothing accepted.');try{validateCandidatePreview(task,values);}catch(error){candidateResults=null;preview='accepted';controller.block(error);throw error;}accepted=await controller.accept();acceptedResults=values;preview='accepted';if(task.mode==='live')history.push(structuredClone(task));persist();notice('Change accepted locally. The expense inbox is now running the tested policy.');}finally{loading=false;}});
 $('cancel').onclick=()=>{renderEpoch++;cancelAll();loading=false;controller.cancel();};
 $('load-model').onclick=()=>startModel();$('model-file').onchange=event=>startModel(event.target.files[0]);
 async function startModel(file=null){await safely(async()=>{if(model.ready)return;loading=true;updateControls();try{await navigator.storage?.persist();await model.start(file);$('mode').value='live';setModeNote();}finally{loading=false;}});}
 function setModeNote(){ $('mode-note').textContent=mode()==='live'?'One downloaded Gemma · three separate contexts · no cloud inference.':mode()==='recorded'?'Historical live evidence. Read-only; no new inference or publication.':'Scripted agents, real executed tests. No model download required.'; }
-$('mode').onchange=()=>safely(async()=>{setModeNote();candidateResults=null;preview='accepted';if(mode()==='recorded'){const last=history.at(-1);if(!last){controller.task=null;notice('No live run recorded yet. Complete a Live run first; Guided examples are never labeled as real recordings.');}else{controller.task={...structuredClone(last),mode:'recorded'};await refreshCandidate();}}else{controller.task=null;}persist();});
+$('mode').onchange=()=>safely(async()=>{setModeNote();candidateResults=null;preview='accepted';if(mode()==='recorded'){const last=history.at(-1);if(!last){controller.task=null;notice('No live run recorded yet. Complete a Live run first; Guided examples are never labeled as real recordings.');}else{controller.task={...structuredClone(last),mode:'recorded'};$('request').value=controller.task.request||DEFAULT_REQUEST;await refreshCandidate();}}else{controller.task=null;}persist();});
 $('show-accepted').onclick=()=>{preview='accepted';renderExpenses();};$('show-candidate').onclick=()=>{preview='candidate';renderExpenses();};
 $('search').oninput=renderExpenses;$('filter').onchange=renderExpenses;
 for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>{tab=button.dataset.tab;renderArtifact();};
@@ -109,15 +112,15 @@ $('layout').onclick=()=>layout(!$('workspace').classList.contains('stacked'));
 let split=48;function resize(value){split=Math.max(30,Math.min(70,value));$('workspace').style.setProperty('--split',`${split}%`);$('divider').setAttribute('aria-valuenow',String(Math.round(split)));}
 $('divider').onpointerdown=event=>{event.preventDefault();const divider=$('divider');divider.setPointerCapture(event.pointerId);const move=e=>{const r=$('workspace').getBoundingClientRect();resize($('workspace').classList.contains('stacked')?(e.clientY-r.top)/r.height*100:(e.clientX-r.left)/r.width*100);};divider.onpointermove=move;divider.onpointerup=()=>{divider.onpointermove=null;divider.onpointerup=null;};};
 $('divider').onkeydown=event=>{if(['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'].includes(event.key)){event.preventDefault();resize(split+(['ArrowLeft','ArrowUp'].includes(event.key)?-2:2));}};
-$('reset').onclick=()=>safely(async()=>{if(!confirm('Reset the demo workspace? The downloaded model will remain cached.'))return;accepted=BASE_SOURCE;acceptedResults=baselineOutputs();candidateResults=null;controller.task=null;preview='accepted';renderEpoch++;$('threshold').value='500';$('receipt').value='';persist();});
+$('reset').onclick=()=>safely(async()=>{if(!confirm('Reset the demo workspace? The downloaded model will remain cached.'))return;accepted=BASE_SOURCE;acceptedResults=baselineOutputs();candidateResults=null;controller.task=null;preview='accepted';renderEpoch++;$('request').value=DEFAULT_REQUEST;persist();});
 render();
 try {
   const stored=await load();if(stored?.schema===1){
     history=(stored.history||[]).filter(t=>t.mode==='live'&&['Review','Done'].includes(t.status)).slice(-5);
     if(stored.accepted&&stored.accepted!==BASE_SOURCE){const values=await execute(stored.accepted,EXPENSES);if(values.every(checkOutput)){accepted=stored.accepted;acceptedResults=values;}}
-    if(stored.task){controller.task=stored.task;if(controller.task.status==='Active'){controller.task.status='Blocked';controller.task.phase='Interrupted by reload';}if(controller.task.mode!=='recorded')$('mode').value=controller.task.mode;else $('mode').value='recorded';setModeNote();}
+    if(stored.task){controller.task=stored.task;$('request').value=controller.task.request||DEFAULT_REQUEST;if(['Ready','Review'].includes(controller.task.status)&&controller.task.mode!=='recorded'){try{const interpreted=policyFromPrompt(controller.task.request);if(interpreted.thresholdCents!==controller.task.rule?.thresholdCents||interpreted.receiptCents!==controller.task.rule?.receiptCents)throw Error('Changed request');}catch{const error=Error('This saved plan needs to be created again from its request. Review the request and choose Create plan.');controller.block(error);notice(error.message);}}if(controller.task.status==='Active'){controller.task.status='Blocked';controller.task.phase='Interrupted by reload';}if(controller.task.mode!=='recorded')$('mode').value=controller.task.mode;else $('mode').value='recorded';setModeNote();}
     if(stored.layout)layout(true);
-    if(controller.task?.candidate)await refreshCandidate();
+    if(controller.task?.candidate&&controller.task.status!=='Blocked')await refreshCandidate();
   }
 }catch(error){notice(`Workspace restore could not complete: ${error.message}. The baseline remains available.`);}
 render();

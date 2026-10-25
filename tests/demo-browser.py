@@ -54,6 +54,17 @@ try:
         page.goto(url)
         page.wait_for_function("() => document.getElementById('expenses').children.length===6")
         assert page.locator('#needs-count').inner_text() == '0'
+        default_request=page.locator('#request').input_value()
+        assert 'above $500' in default_request
+        assert page.locator('#request-form input').count() == 0
+        assert page.locator('#threshold, #receipt, .rule-fields').count() == 0
+        page.locator('#request').fill('Add manager approval for high-value expenses.')
+        page.locator('#plan').click()
+        page.wait_for_function("() => !document.getElementById('notice').hidden")
+        assert 'one clear amount' in page.locator('#notice').inner_text()
+        assert page.locator('#run').is_disabled()
+        assert page.locator('#accept').is_hidden()
+        page.locator('#request').fill(default_request)
         assert page.locator('#agents .agent-name').all_text_contents() == ['Planning','Building','Checking']
         assert page.locator('#agents .agent-status').all_text_contents() == ['Waiting'] * 3
         assert page.locator('#agents .agent-bot').count() == 3
@@ -144,18 +155,41 @@ try:
         page.locator('#filter').select_option('attention')
         assert page.locator('#expenses tr').count() == 2
         page.locator('#filter').select_option('all')
-        page.locator('#receipt').fill('75')
+        page.locator('[data-tab=tests]').click()
+        custom_request='Expenses above $600 need manager review. Require receipts above $75. Preserve already paid expenses.'
+        page.locator('#request').fill(custom_request)
+        assert page.locator('#accept').is_hidden()
+        assert page.locator('#run').is_disabled()
         page.locator('#plan').click()
         page.wait_for_function("() => !document.getElementById('run').disabled")
+        assert page.locator('[data-tab=plan]').get_attribute('aria-selected') == 'true'
+        assert '$600.00' in page.locator('#artifact-body').inner_text()
+        assert '$75.00' in page.locator('#artifact-body').inner_text()
+        page.wait_for_timeout(100)
+        page.reload()
+        page.wait_for_function("() => !document.getElementById('run').disabled")
+        assert page.locator('#request').input_value() == custom_request
+        assert '$600.00' in page.locator('#artifact-body').inner_text()
         page.locator('#run').click()
         page.wait_for_function("() => !document.getElementById('accept').hidden && !document.getElementById('accept').disabled", timeout=60000)
         assert page.locator('#test-count').inner_text() == '8/8'
         assert page.locator('#needs-count').inner_text() == '4'
+        page.wait_for_timeout(100)
+        page.reload()
+        page.wait_for_function("() => !document.getElementById('accept').hidden && !document.getElementById('accept').disabled")
+        assert page.locator('#request').input_value() == custom_request
         with page.expect_download() as download:
             page.locator('#export').click()
         exported = json.loads(pathlib.Path(download.value.path()).read_text())
         assert exported['task']['mode'] == 'guided'
         assert len(exported['task']['versions']) == 2
+        assert exported['task']['rule'] == {'thresholdCents':60000,'receiptCents':7500}
+        page.locator('#accept').click()
+        page.wait_for_function("() => document.getElementById('artifact-title').textContent==='Accepted locally'")
+        page.wait_for_timeout(100)
+        page.reload()
+        page.wait_for_function("() => document.getElementById('artifact-title').textContent==='Accepted locally'")
+        assert page.locator('#request').input_value() == custom_request
         page.locator('#mode').select_option('recorded')
         assert 'No live run recorded yet' in page.locator('#notice').inner_text()
         assert page.locator('#plan').is_disabled()
@@ -190,7 +224,8 @@ try:
               const oldCases=core.requiredCases(rule).filter(test=>test.input.receipt);
               const rows=core.score(oldCases,await execute(candidate,oldCases.map(test=>test.input)),rule);
               if(rows.length!==5||!rows.every(row=>row.pass))throw Error('Legacy fixture changed');
-              const task={id:'legacy-test',mode:'live',request:'Approval only',rule,base:core.BASE_SOURCE,
+              const {DEFAULT_REQUEST}=await import(new URL('prompt-policy.mjs',location.href));
+              const task={id:'legacy-test',mode:'live',request:DEFAULT_REQUEST,rule,base:core.BASE_SOURCE,
                 status:'Review',phase:'Human approval',attempt:1,plan:{summary:'Legacy task',steps:['Implement']},
                 candidate,hash,evidence:{hash,rows},versions:[],events:[]};
               await save({schema:1,accepted:core.BASE_SOURCE,task,history:[],layout:false});
@@ -211,6 +246,32 @@ try:
             assert persisted == {'unchanged':True,'status':'Blocked'}, persisted
             assert page.locator('#needs-count').inner_text() == '0'
             print('PASS: stale passing Review evidence is blocked by the current policy oracle; acceptance leaves the baseline unchanged.')
+            mismatch_request='Require manager approval for expenses above $650. Preserve already paid expenses.'
+            page.evaluate('''async request => {
+              const {load,save}=await import(new URL('storage.mjs',location.href));
+              const stored=await load();
+              stored.task.request=request;stored.task.status='Review';stored.task.phase='Human approval';
+              await save(stored);
+            }''', mismatch_request)
+            page.reload()
+            page.wait_for_function("() => document.getElementById('notice').textContent.includes('saved plan needs to be created again')")
+            assert page.locator('#request').input_value() == mismatch_request
+            assert page.locator('#run').is_disabled()
+            assert page.locator('#accept').is_hidden()
+            assert page.locator('#needs-count').inner_text() == '0'
+            page.locator('#mode').select_option('guided')
+            page.locator('#plan').click()
+            page.wait_for_function("() => !document.getElementById('run').disabled")
+            assert '$650.00' in page.locator('#artifact-body').inner_text()
+            assert '$500.00' not in page.locator('#artifact-body').inner_text()
+            page.once('dialog', lambda dialog: dialog.accept())
+            page.locator('#reset').click()
+            page.wait_for_function("() => document.getElementById('artifact-title').textContent==='A clear contract comes first'")
+            assert page.locator('#request').input_value() == default_request
+            assert page.locator('#run').is_disabled()
+            print('PASS: mismatched saved request/rules cannot proceed; a new plan follows the edited prompt, and Reset restores the explicit default.')
+
+        print('PASS: one prompt supplies default/custom approval and optional receipts; Ready/Review/Done preserve custom text and rules on reload.')
         print('PASS: real controller role changes drive one working icon, accessible labels, stopped/finished states, and reduced-motion behavior.')
         assert not external_requests, external_requests
         assert not errors, errors
