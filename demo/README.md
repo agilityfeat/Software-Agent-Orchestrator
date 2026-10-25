@@ -182,6 +182,42 @@ presenter and a second laptop. Check GPU compatibility, cold/cached load, planne
 JSON, coder output, Tester cases, cancellation and actual latency. Save a successful
 Live run to enable honest Recorded replay. No model speed or success rate is claimed.
 
+## Official developer workboard preview
+
+The topbar’s **Developer workboard** link opens `./workboard/`, a separate public
+screen generated from the real application’s `public/index.html`, `styles.css`,
+`workboard.js` and `workboard-model.js`. The official layout, cards, stage controls,
+filters, repository queues, detail sections, Attention, Main and System views are
+reused. It is a read-only preview with clearly labeled fictional tasks and a
+frozen sample snapshot. No real account, repository, worker or private session is
+connected. Agent statuses illustrate the sample snapshot; no agents run here.
+
+The explicit `workboard/preview-data.mjs` adapter serves only an allowlist of local
+GET reads. It rejects writes and unknown routes without contacting a backend.
+Task creation, planning, editing, priority changes, launches and delivery remain
+disabled. A `connect-src 'none'` policy prevents network transports. This screen
+neither loads Gemma nor shares the expense demo’s live model session.
+
+Update the official UI first, then regenerate and check the committed preview:
+
+```sh
+node scripts/generate-workboard-preview.mjs
+node scripts/generate-workboard-preview.mjs --check
+node --test tests/workboard-preview.test.mjs
+python3 tests/workboard-preview-browser.py
+```
+
+The generator asserts every adaptation anchor, copies the official stylesheet and
+model module byte-for-byte, records source hashes, and changes only the copied
+HTML’s relative paths/preview framing and the copied JS’s explicit preview
+transport, labels, read navigation, polling and storage namespace. `--check`
+rejects source drift or hand-edited generated outputs. Keep the adapter and
+`preview.css` as the small handwritten preview layer; edit the generator rather
+than generated files. No production `public/` or Rust runtime changes are needed.
+The existing Pages workflow uploads only `demo/`; regenerating the committed
+preview changes that directory and triggers publication. Run the drift check
+locally whenever official assets change; this adds no CI requirement.
+
 ## References
 
 - [LiteRT-LM browser API](https://developers.google.com/edge/litert-lm/js)

@@ -1,0 +1,5 @@
+/* Preview framing only. Official workboard styles.css is copied byte-for-byte. */
+.preview-banner{display:grid;gap:8px;padding:16px 36px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13px;line-height:1.5;color:var(--muted)}
+.preview-banner strong{color:var(--text)}
+.preview-banner a{color:var(--mint);width:fit-content;text-decoration:underline;text-underline-offset:3px;min-height:24px}
+@media(max-width:720px){.preview-banner{padding:14px 18px;font-size:12px}}
