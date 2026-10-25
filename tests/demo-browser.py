@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Browser smoke test. Default uses real QuickJS/CDN; --offline-ui uses a test-only Node VM adapter.
+"""Browser smoke test. Default uses bundled real QuickJS; --offline-ui uses a test-only Node VM adapter.
 Requires: python -m pip install playwright; python -m playwright install chromium.
 Never loads Gemma or calls a paid provider. Screenshots go outside the checkout.
 """
@@ -41,18 +41,42 @@ try:
         context = browser.new_context(viewport={'width': 1512, 'height': 1120}, device_scale_factor=1)
         page = context.new_page()
         errors = []
+        external_requests = []
+        def block_external(route):
+            external_requests.append(route.request.url)
+            route.abort()
+        # Candidate execution must work from a project subpath with no CDN access.
+        context.route('https://**/*', block_external)
         page.on('pageerror', lambda error: errors.append(str(error)))
         if args.offline_ui:
             page.expose_function('__testExecute', test_execute)
             page.route('**/sandbox.mjs', lambda route: route.fulfill(content_type='application/javascript', body="export const execute=(source,inputs)=>globalThis.__testExecute(source,inputs);export const cancelAll=()=>{};"))
         page.goto(url)
-        page.wait_for_function("document.getElementById('expenses').children.length===6")
+        page.wait_for_function("() => document.getElementById('expenses').children.length===6")
         assert page.locator('#needs-count').inner_text() == '0'
+        if not args.offline_ui:
+            isolation = page.evaluate('''async () => {
+              const {execute} = await import(new URL('sandbox.mjs', location.href));
+              const outputs = await execute(`function evaluateExpense() {
+                return {status:'eligible',canApprove:true,reason:JSON.stringify([
+                  typeof document,typeof window,typeof self,typeof fetch,
+                  typeof process,typeof require,typeof postMessage])};
+              }`, [{}]);
+              let loopError;
+              try {await execute('function evaluateExpense() {while(true){}}', [{}]);}
+              catch (error) {loopError=String(error.message || error);}
+              const recovered=await execute("function evaluateExpense() {return {status:'paid'};}", [{}]);
+              return {globals:JSON.parse(outputs[0].reason),loopError,recovered};
+            }''')
+            assert isolation['globals'] == ['undefined'] * 7, isolation
+            assert 'execution budget' in isolation.get('loopError', ''), isolation
+            assert isolation['recovered'] == [{'status':'paid'}], isolation
+            print('PASS: real QuickJS hides host APIs, interrupts infinite loops and recovers in a fresh sandbox.')
         page.locator('#plan').click()
-        page.wait_for_function("!document.getElementById('run').disabled")
+        page.wait_for_function("() => !document.getElementById('run').disabled")
         assert page.locator('#artifact-title').inner_text() == 'Awaiting authorization'
         page.locator('#run').click()
-        page.wait_for_function("!document.getElementById('accept').hidden && !document.getElementById('accept').disabled", timeout=60000)
+        page.wait_for_function("() => !document.getElementById('accept').hidden && !document.getElementById('accept').disabled", timeout=60000)
         assert page.locator('#test-count').inner_text() == '5/5'
         assert page.locator('#attempt').inner_text() == 'Attempt 2/3'
         assert page.locator('#needs-count').inner_text() == '2'
@@ -65,11 +89,11 @@ try:
         assert page.locator('#needs-count').inner_text() == '0'
         page.locator('#show-candidate').click()
         page.locator('#accept').click()
-        page.wait_for_function("document.getElementById('artifact-title').textContent==='Accepted locally'")
+        page.wait_for_function("() => document.getElementById('artifact-title').textContent==='Accepted locally'")
         assert page.locator('#needs-count').inner_text() == '2'
         page.wait_for_timeout(300)
         page.reload()
-        page.wait_for_function("document.getElementById('needs-count').textContent==='2'")
+        page.wait_for_function("() => document.getElementById('needs-count').textContent==='2'")
         page.locator('#search').fill('Atlas')
         assert page.locator('#expenses tr').count() == 1
         page.locator('#search').fill('')
@@ -78,9 +102,9 @@ try:
         page.locator('#filter').select_option('all')
         page.locator('#receipt').fill('75')
         page.locator('#plan').click()
-        page.wait_for_function("!document.getElementById('run').disabled")
+        page.wait_for_function("() => !document.getElementById('run').disabled")
         page.locator('#run').click()
-        page.wait_for_function("!document.getElementById('accept').hidden && !document.getElementById('accept').disabled", timeout=60000)
+        page.wait_for_function("() => !document.getElementById('accept').hidden && !document.getElementById('accept').disabled", timeout=60000)
         assert page.locator('#test-count').inner_text() == '8/8'
         assert page.locator('#needs-count').inner_text() == '4'
         with page.expect_download() as download:
@@ -93,7 +117,7 @@ try:
         assert page.locator('#plan').is_disabled()
         page.locator('#mode').select_option('guided')
         page.locator('#plan').click()
-        page.wait_for_function("!document.getElementById('run').disabled")
+        page.wait_for_function("() => !document.getElementById('run').disabled")
         page.locator('#run').click()
         page.locator('#cancel').click()
         page.wait_for_timeout(700)
@@ -102,9 +126,10 @@ try:
         page.set_viewport_size({'width': 390, 'height': 844})
         page.screenshot(path=str(args.screenshots / 'mobile.png'), full_page=True)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        assert not external_requests, external_requests
         assert not errors, errors
         print('PASS: guided boundary repair, receipt rule, human acceptance, persistence, version switch, search/filter, export, honest recording mode, cancellation, both layouts, mobile width.')
-        print('Adapter: ' + ('OFFLINE TEST NODE VM — QuickJS/CDN and Gemma NOT exercised' if args.offline_ui else 'real browser QuickJS — Gemma NOT exercised'))
+        print('Adapter: ' + ('OFFLINE TEST NODE VM — QuickJS and Gemma NOT exercised' if args.offline_ui else 'bundled real browser QuickJS with external requests blocked — Gemma NOT exercised'))
         browser.close()
 finally:
     server.shutdown()

@@ -1,6 +1,6 @@
 // Only this worker has access to the interpreter. Generated code receives no host APIs.
-import {newQuickJSWASMModuleFromVariant} from 'https://esm.sh/quickjs-emscripten-core@0.31.0';
-import variant from 'https://esm.sh/@jitl/quickjs-singlefile-browser-release-sync@0.31.0';
+import {newQuickJSWASMModuleFromVariant} from './vendor/quickjs-0.31.0/core.mjs';
+import variant from './vendor/quickjs-0.31.0/index.mjs';
 const ready=newQuickJSWASMModuleFromVariant(variant);
 self.onmessage=async({data})=>{
   try {
