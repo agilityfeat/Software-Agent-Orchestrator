@@ -1,4 +1,4 @@
-import {BASE_SOURCE,EXPENSES,money,policy,criteria,baselineOutputs,checkOutput,canAccept} from './core.mjs';
+import {BASE_SOURCE,EXPENSES,money,policy,criteria,baselineOutputs,checkOutput,canAccept,score} from './core.mjs';
 import {Controller} from './controller.mjs';
 import {execute,cancelAll} from './sandbox.mjs';
 import {LocalModel} from './model.mjs';
@@ -80,17 +80,22 @@ function renderExpenses(){
   $('preview-status').textContent=preview==='candidate'?`Candidate ${controller.task?.hash?.slice(0,10)||''} · not yet accepted`:'Accepted version · local only';
 }
 function render(){renderBoard();renderArtifact();renderExpenses();updateControls();}
+function validateCandidatePreview(task,values){
+  const cases=EXPENSES.map(input=>({name:input.merchant,input}));
+  const failures=score(cases,values,task.rule).filter(row=>!row.pass);
+  if(failures.length)throw Error(`Candidate violates current policy: ${failures.map(row=>`${row.name} must be ${row.expected}`).join('; ')}. Nothing accepted.`);
+}
 async function refreshCandidate(){
   const t=controller.task;if(!t?.candidate)return;
   const epoch=++renderEpoch,source=t.candidate;const results=await execute(source,EXPENSES);
   if(epoch!==renderEpoch||t!==controller.task||source!==t.candidate)return;
-  if(results.length!==EXPENSES.length||!results.every(checkOutput))throw Error('Candidate produced invalid preview data.');
+  try {validateCandidatePreview(t,results);}catch(error){candidateResults=null;preview='accepted';controller.block(error);throw error;}
   candidateResults=results;preview='candidate';render();
 }
 async function safely(action){notice();try{await action();}catch(error){notice(String(error.message||error));}finally{render();}}
 $('request-form').onsubmit=event=>{event.preventDefault();safely(async()=>{candidateResults=null;preview='accepted';await controller.plan({request:$('request').value,rule:policy($('threshold').value,$('receipt').value),mode:mode(),base:accepted});});};
 $('run').onclick=()=>safely(async()=>{loading=true;updateControls();try{await controller.run();await refreshCandidate();if(controller.task.mode==='live'){history.push(structuredClone(controller.task));persist();}tab='tests';}finally{loading=false;}});
-$('accept').onclick=()=>safely(async()=>{loading=true;updateControls();try{const task=controller.task,source=task.candidate,values=await execute(source,EXPENSES);if(task!==controller.task||source!==task.candidate||values.length!==EXPENSES.length||!values.every(checkOutput))throw Error('Preview validation failed; nothing accepted.');accepted=await controller.accept();acceptedResults=values;preview='accepted';if(task.mode==='live')history.push(structuredClone(task));persist();notice('Change accepted locally. The expense inbox is now running the tested policy.');}finally{loading=false;}});
+$('accept').onclick=()=>safely(async()=>{loading=true;updateControls();try{const task=controller.task,source=task.candidate,values=await execute(source,EXPENSES);if(task!==controller.task||source!==task.candidate)throw Error('Preview validation failed; nothing accepted.');try{validateCandidatePreview(task,values);}catch(error){candidateResults=null;preview='accepted';controller.block(error);throw error;}accepted=await controller.accept();acceptedResults=values;preview='accepted';if(task.mode==='live')history.push(structuredClone(task));persist();notice('Change accepted locally. The expense inbox is now running the tested policy.');}finally{loading=false;}});
 $('cancel').onclick=()=>{renderEpoch++;cancelAll();loading=false;controller.cancel();};
 $('load-model').onclick=()=>startModel();$('model-file').onchange=event=>startModel(event.target.files[0]);
 async function startModel(file=null){await safely(async()=>{if(model.ready)return;loading=true;updateControls();try{await navigator.storage?.persist();await model.start(file);$('mode').value='live';setModeNote();}finally{loading=false;}});}

@@ -31,7 +31,7 @@ export function criteria(rule) {
     `Submitted expenses above ${money(rule.thresholdCents)} need manager review; exactly the threshold remains eligible.`,
     'Paid expenses stay paid, with approval disabled.',
     'Every result includes a nonempty explanation and a correct canApprove boolean.',
-    ...(rule.receiptCents === null ? [] : [`Missing receipts above ${money(rule.receiptCents)} take priority over manager review.`]),
+    ...(rule.receiptCents === null ? ['No receipt requirement is enabled. Missing receipts must not change the result: only the manager approval threshold applies, and paid expenses stay paid.'] : [`Missing receipts above ${money(rule.receiptCents)} take priority over manager review.`]),
   ];
 }
 export function requiredCases(rule) {
@@ -44,7 +44,12 @@ export function requiredCases(rule) {
     {name:'Large submitted expense', input:expense(189000)},
     {name:'Paid expense is unchanged', input:expense(250000,{status:'paid'})},
   ];
-  if (rule.receiptCents !== null) {
+  if (rule.receiptCents === null) {
+    cases.push({name:'No receipt rule · below threshold',input:expense(t - 1,{receipt:false})},
+      {name:'No receipt rule · exact boundary',input:expense(t,{receipt:false})},
+      {name:'No receipt rule · above threshold',input:expense(t + 1,{receipt:false})},
+      {name:'Paid without receipt stays paid',input:expense(250000,{status:'paid',receipt:false})});
+  } else {
     const r = rule.receiptCents;
     cases.push({name:'Receipt boundary',input:expense(r,{receipt:false})},
       {name:'Missing receipt above boundary',input:expense(r + 1,{receipt:false})},
@@ -88,7 +93,11 @@ export function extraCases(value) {
   });
 }
 export function canAccept(task) {
-  return Boolean(task && task.mode !== 'recorded' && task.status === 'Review' && task.candidate && task.evidence?.hash === task.hash && task.evidence?.rows.length >= 5 && task.evidence.rows.every(x=>x.pass));
+  if(!(task && task.rule && task.mode !== 'recorded' && task.status === 'Review' && task.candidate && task.evidence?.hash === task.hash && Array.isArray(task.evidence?.rows) && task.evidence.rows.every(x=>x.pass)))return false;
+  // Persisted evidence must cover today's immutable cases, not only an old count.
+  return requiredCases(task.rule).every(test=>task.evidence.rows.some(row=>
+    row.input?.amountCents===test.input.amountCents && row.input?.status===test.input.status && row.input?.receipt===test.input.receipt &&
+    score([test],[row.actual],task.rule)[0].pass));
 }
 export function fixtureSource(rule, broken = false) {
   return `function evaluateExpense(expense) {

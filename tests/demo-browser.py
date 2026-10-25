@@ -77,9 +77,12 @@ try:
         assert page.locator('#artifact-title').inner_text() == 'Awaiting authorization'
         page.locator('#run').click()
         page.wait_for_function("() => !document.getElementById('accept').hidden && !document.getElementById('accept').disabled", timeout=60000)
-        assert page.locator('#test-count').inner_text() == '5/5'
+        assert page.locator('#test-count').inner_text() == '9/9'
         assert page.locator('#attempt').inner_text() == 'Attempt 2/3'
         assert page.locator('#needs-count').inner_text() == '2'
+        for merchant in ['Studio Supply', 'Design Tools']:
+            assert page.locator('#expenses tr').filter(has_text=merchant).locator('.badge').inner_text() == 'Eligible'
+        assert page.locator('#expenses tr').filter(has_text='Cloud Hosting').locator('.badge').inner_text() == 'Paid'
         page.screenshot(path=str(args.screenshots / 'side-by-side.png'), full_page=True)
         page.locator('#layout').click()
         assert 'stacked' in page.locator('#workspace').get_attribute('class')
@@ -94,6 +97,9 @@ try:
         page.wait_for_timeout(300)
         page.reload()
         page.wait_for_function("() => document.getElementById('needs-count').textContent==='2'")
+        for merchant in ['Studio Supply', 'Design Tools']:
+            assert page.locator('#expenses tr').filter(has_text=merchant).locator('.badge').inner_text() == 'Eligible'
+        assert page.locator('#expenses tr').filter(has_text='Cloud Hosting').locator('.badge').inner_text() == 'Paid'
         page.locator('#search').fill('Atlas')
         assert page.locator('#expenses tr').count() == 1
         page.locator('#search').fill('')
@@ -126,6 +132,45 @@ try:
         page.set_viewport_size({'width': 390, 'height': 844})
         page.screenshot(path=str(args.screenshots / 'mobile.png'), full_page=True)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        # Restore a legacy Review task whose five passing rows omitted missing receipts.
+        # It must not promote the candidate or mutate the accepted baseline.
+        if not args.offline_ui:
+            page.evaluate('''async () => {
+              const core=await import(new URL('core.mjs',location.href));
+              const {execute}=await import(new URL('sandbox.mjs',location.href));
+              const {save}=await import(new URL('storage.mjs',location.href));
+              const rule=core.policy('500');
+              const candidate=`function evaluateExpense(expense) {
+                if(expense.status==='paid')return {status:'paid',reason:'Already paid',canApprove:false};
+                if(expense.amountCents>50000)return {status:'manager_review',reason:'Above threshold',canApprove:false};
+                if(expense.receipt===false)return {status:'receipt_required',reason:'Missing receipt',canApprove:false};
+                return {status:'eligible',reason:'Eligible',canApprove:true};
+              }`;
+              const hash=await core.digest(candidate);
+              const oldCases=core.requiredCases(rule).filter(test=>test.input.receipt);
+              const rows=core.score(oldCases,await execute(candidate,oldCases.map(test=>test.input)),rule);
+              if(rows.length!==5||!rows.every(row=>row.pass))throw Error('Legacy fixture changed');
+              const task={id:'legacy-test',mode:'live',request:'Approval only',rule,base:core.BASE_SOURCE,
+                status:'Review',phase:'Human approval',attempt:1,plan:{summary:'Legacy task',steps:['Implement']},
+                candidate,hash,evidence:{hash,rows},versions:[],events:[]};
+              await save({schema:1,accepted:core.BASE_SOURCE,task,history:[],layout:false});
+            }''')
+            page.reload()
+            page.wait_for_function("() => document.getElementById('notice').textContent.includes('Candidate violates current policy')")
+            assert 'Studio Supply must be eligible' in page.locator('#notice').inner_text()
+            assert 'Design Tools must be eligible' in page.locator('#notice').inner_text()
+            assert page.locator('#accept').is_hidden()
+            # Exercise promotion guard directly as well as the hidden UI control.
+            persisted = page.evaluate('''async () => {
+              await document.getElementById('accept').onclick();
+              const {load}=await import(new URL('storage.mjs',location.href));
+              const {BASE_SOURCE}=await import(new URL('core.mjs',location.href));
+              const stored=await load();
+              return {unchanged:stored.accepted===BASE_SOURCE,status:stored.task.status};
+            }''')
+            assert persisted == {'unchanged':True,'status':'Blocked'}, persisted
+            assert page.locator('#needs-count').inner_text() == '0'
+            print('PASS: stale passing Review evidence is blocked by the current policy oracle; acceptance leaves the baseline unchanged.')
         assert not external_requests, external_requests
         assert not errors, errors
         print('PASS: guided boundary repair, receipt rule, human acceptance, persistence, version switch, search/filter, export, honest recording mode, cancellation, both layouts, mobile width.')
