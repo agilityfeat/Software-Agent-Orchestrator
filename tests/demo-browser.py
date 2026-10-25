@@ -54,6 +54,19 @@ try:
         page.goto(url)
         page.wait_for_function("() => document.getElementById('expenses').children.length===6")
         assert page.locator('#needs-count').inner_text() == '0'
+        assert page.locator('#agents .agent-name').all_text_contents() == ['Planning','Building','Checking']
+        assert page.locator('#agents .agent-status').all_text_contents() == ['Waiting'] * 3
+        assert page.locator('#agents .agent-bot').count() == 3
+        page.evaluate('''() => {
+          window.__observedAgentWork=[];
+          new MutationObserver(records=>{
+            for(const record of records)for(const node of record.addedNodes){
+              if(node.nodeType===1&&node.matches('.agent[data-state="working"]')){
+                window.__observedAgentWork.push({role:node.dataset.role,status:node.getAttribute('aria-label'),icon:!!node.querySelector('.agent-bot')});
+              }
+            }
+          }).observe(document.getElementById('agents'),{childList:true});
+        }''')
         if not args.offline_ui:
             isolation = page.evaluate('''async () => {
               const {execute} = await import(new URL('sandbox.mjs', location.href));
@@ -75,14 +88,39 @@ try:
         page.locator('#plan').click()
         page.wait_for_function("() => !document.getElementById('run').disabled")
         assert page.locator('#artifact-title').inner_text() == 'Awaiting authorization'
+        assert page.locator('#agents .agent-status').all_text_contents() == ['Finished','Up next','Waiting']
         page.locator('#run').click()
+        working=page.locator('#agents .agent[data-role="Coder"][data-state="working"]')
+        working.wait_for()
+        assert page.locator('#agents .agent.active').count() == 1
+        assert working.get_attribute('aria-current') == 'step'
+        assert working.locator('.agent-status').inner_text() == 'Working now'
+        assert working.locator('.agent-bot').evaluate("node=>getComputedStyle(node).animationName") == 'agent-work'
+        assert working.locator('.agent-icon').evaluate("node=>getComputedStyle(node,'::before').animationName") == 'agent-orbit'
+        page.screenshot(path=str(args.screenshots / 'building-active.png'), full_page=True)
+        page.emulate_media(reduced_motion='reduce')
+        assert page.locator('#agents .agent.active .agent-bot').evaluate("node=>getComputedStyle(node).animationName") == 'none'
+        assert page.locator('#agents .agent.active .agent-icon').evaluate("node=>getComputedStyle(node,'::before').animationName") == 'none'
+        page.emulate_media(reduced_motion='no-preference')
         page.wait_for_function("() => !document.getElementById('accept').hidden && !document.getElementById('accept').disabled", timeout=60000)
         assert page.locator('#test-count').inner_text() == '9/9'
+        assert page.locator('#agents .agent-status').all_text_contents() == ['Finished'] * 3
+        assert page.locator('#agents .agent.active').count() == 0
+        observed=page.evaluate('window.__observedAgentWork')
+        assert {item['role'] for item in observed} == {'Planner','Coder','Tester'}, observed
+        assert all(item['icon'] and 'Working now' in item['status'] for item in observed), observed
+        assert all(name=='none' for name in page.locator('#agents .agent-bot').evaluate_all("nodes=>nodes.map(node=>getComputedStyle(node).animationName)"))
+
         assert page.locator('#attempt').inner_text() == 'Attempt 2/3'
         assert page.locator('#needs-count').inner_text() == '2'
         for merchant in ['Studio Supply', 'Design Tools']:
             assert page.locator('#expenses tr').filter(has_text=merchant).locator('.badge').inner_text() == 'Eligible'
         assert page.locator('#expenses tr').filter(has_text='Cloud Hosting').locator('.badge').inner_text() == 'Paid'
+        divider=page.locator('#divider')
+        divider.focus()
+        for _ in range(9): divider.press('ArrowLeft')
+        assert page.locator('#agents .agent').evaluate_all("nodes=>nodes.every(card=>{const box=card.getBoundingClientRect();return [...card.children].every(child=>{const r=child.getBoundingClientRect();return r.left>=box.left&&r.right<=box.right;});})")
+        for _ in range(9): divider.press('ArrowRight')
         page.screenshot(path=str(args.screenshots / 'side-by-side.png'), full_page=True)
         page.locator('#layout').click()
         assert 'stacked' in page.locator('#workspace').get_attribute('class')
@@ -128,6 +166,8 @@ try:
         page.locator('#cancel').click()
         page.wait_for_timeout(700)
         assert page.locator('#artifact-title').inner_text() == 'Cancelled'
+        assert page.locator('#agents .agent-status').all_text_contents() == ['Stopped'] * 3
+        assert page.locator('#agents .agent.active').count() == 0
         assert page.locator('#accept').is_hidden()
         page.set_viewport_size({'width': 390, 'height': 844})
         page.screenshot(path=str(args.screenshots / 'mobile.png'), full_page=True)
@@ -171,6 +211,7 @@ try:
             assert persisted == {'unchanged':True,'status':'Blocked'}, persisted
             assert page.locator('#needs-count').inner_text() == '0'
             print('PASS: stale passing Review evidence is blocked by the current policy oracle; acceptance leaves the baseline unchanged.')
+        print('PASS: real controller role changes drive one working icon, accessible labels, stopped/finished states, and reduced-motion behavior.')
         assert not external_requests, external_requests
         assert not errors, errors
         print('PASS: guided boundary repair, receipt rule, human acceptance, persistence, version switch, search/filter, export, honest recording mode, cancellation, both layouts, mobile width.')

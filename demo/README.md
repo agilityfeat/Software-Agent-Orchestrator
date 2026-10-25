@@ -57,22 +57,29 @@ buttons and receipts are synthetic; no payment or external business action occur
 
 - No-build HTML/CSS/ES modules keep the demo independent of the Rust starter.
   This deliberately avoids introducing React/Vite or a Node build requirement.
-- `model-worker.mjs`: one LiteRT-LM 0.18.0 engine, fresh conversation per role,
+- `model-worker.mjs`: one LiteRT-LM 0.18.0 engine in a classic worker, with
+  an explicit pinned CDN locator for its WASM assets, fresh conversations per role,
   sequential inference, download progress and a versioned model cache. JS and
   WASM versions match; 0.18.1 is intentionally avoided because of its reported
   browser asset regression. Generation and load operations have deadlines;
   cancellation terminates the model worker.
-- `sandbox-worker.mjs`: QuickJS/WASM 0.31.0, new isolated context per input,
+- `sandbox-worker.mjs`: bundled QuickJS/WASM 0.31.0, new isolated context per input,
   16 MB memory limit, 256 KB stack limit and interrupt deadline. Generated code
   receives JSON data only, with no host DOM, network, credentials or filesystem
-  API. An outer worker timeout is an additional limit.
+  API. An outer worker timeout is an additional limit. Pinned modules, embedded
+  WASM, licenses and upstream SHA-256 provenance live in `vendor/quickjs-0.31.0/`;
+  candidate execution requires no CDN imports or broader worker policy.
 - `core.mjs`: protected expectations, output schemas and exact-code SHA-256.
   The Tester proposes data-only cases; the host calculates expected results.
-  A model's prose never creates a passing test. Using the same model for QA
-  does not provide independent model judgment; deterministic checks are essential.
+  A model's prose never creates a passing test. Default-policy checks include
+  missing-receipt boundaries; preview and acceptance recheck every displayed
+  expense against the current oracle, including saved runs with old evidence.
+  Using the same model for QA does not provide independent model judgment; deterministic checks are essential.
 - `controller.mjs`: authorization, bounded repair, versioned evidence, cancellation
   fencing and exact-result acceptance. Previously tested code cannot be edited
   and accepted under an old hash.
+- `agent-activity.mjs`: Planning, Building and Checking icons show which role
+  is working from the actual controller state, with text and reduced-motion support.
 - `app.mjs`: resizable side-by-side/top-bottom views, responsive expense inbox,
   accepted/candidate source comparison, search, filters, evidence and local history.
 
@@ -112,18 +119,21 @@ python3 tests/demo-browser.py
 python3 tests/demo-browser.py --offline-ui
 ```
 
-The normal browser smoke exercises real QuickJS workers without downloading
-Gemma. `--offline-ui` replaces ONLY the test's sandbox route with a Node VM
-adapter; it does not validate the production sandbox. Screenshots go to a
+The normal browser smoke exercises bundled real QuickJS workers with external
+HTTPS requests blocked, without downloading Gemma. `--offline-ui` replaces ONLY
+the test's sandbox route with a Node VM adapter; it does not validate the production sandbox. Screenshots go to a
 system temporary directory by default, outside the checkout.
 
-Implementation validation: 39 deterministic tests pass. An in-memory Chromium
-UI exercise also passed guided repair, approval, filtering, receipt rules,
-responsive layouts and mobile overflow checks using a test-only Node VM adapter.
-The authoring environment blocks browser localhost/file navigation and external
-CDN access, so production browser worker/CDN integration, origin persistence,
-real Gemma inference and deployed Pages behavior remain **unverified**. Do not
-interpret the screenshots or guided run as evidence of Gemma performance.
+Deterministic tests and the production QuickJS browser smoke pass, including
+host-API isolation, interruption, acceptance, persistence and rejection of stale
+passing evidence. On 2026-10-25, a native desktop Chrome Live run downloaded the
+2.01 GB Gemma artifact, initialized on WebGPU, completed Planner → Coder → Tester,
+and passed 10 executed checks before human acceptance. The $500 expense remained
+eligible, larger submitted expenses required manager review, and paid history
+remained paid. Reloading reused the browser model cache; Recorded mode retained
+the accepted real run. This is one laptop's observed result, not a performance
+or cross-device success guarantee. Repeat the Live smoke at the Pages deployment
+URL to verify hosted asset paths and that browser's origin-specific cache.
 
 Before presenting, run the normal browser smoke and then a real model task on the
 presenter and a second laptop. Check GPU compatibility, cold/cached load, planner

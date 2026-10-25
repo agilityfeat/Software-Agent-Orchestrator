@@ -1,3 +1,4 @@
+import {renderAgents} from './agent-activity.mjs';
 import {BASE_SOURCE,EXPENSES,money,policy,criteria,baselineOutputs,checkOutput,canAccept,score} from './core.mjs';
 import {Controller} from './controller.mjs';
 import {execute,cancelAll} from './sandbox.mjs';
@@ -30,9 +31,7 @@ function renderBoard(){
     head.append(text('b',current?'1':'0'));const slot=text('div',current?'Expense policy':'—',`slot${current?' current':''}`);
     if(current)slot.append(text('small',t.status==='Blocked'?'Blocked':t.phase));col.append(head,slot);$('board').append(col);
   }
-  $('agents').replaceChildren();for(const [i,role]of ['Planner','Coder','Tester'].entries()){
-    const active=t?.status==='Active'&&t.phase===role,a=text('div','',`agent${active?' active':''}`),title=text('div',role);title.append(text('small',active?'Working locally':'Shared model'));a.append(text('span',String(i+1).padStart(2,'0'),'number'),title);$('agents').append(a);
-  }
+  renderAgents($('agents'),t);
   $('task-mode').textContent=t?.mode?.toUpperCase()||mode().toUpperCase();
   $('attempt').textContent=t?.attempt?`Attempt ${t.attempt}/3`:t?.status||'Waiting for a task';
   $('test-count').textContent=t?.evidence?`${t.evidence.rows.filter(r=>r.pass).length}/${t.evidence.rows.length}`:'—';
