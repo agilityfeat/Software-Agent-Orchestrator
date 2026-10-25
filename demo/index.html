@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="A local-first software agent workbench paired with a live expense application. One model, three roles, real tests.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://esm.sh https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <title>Agents at Work · Software Agent Orchestrator</title>
+  <link rel="stylesheet" href="./styles.css"><script type="module" src="./app.mjs"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./" aria-label="Agents at Work home"><span class="brandmark">S<span>O</span></span><span>Agents at Work<small>SOFTWARE AGENT ORCHESTRATOR</small></span></a>
+  <div class="top-actions"><span class="local-label"><i></i> Your browser. Your model.</span><button id="layout" class="quiet" aria-label="Switch to top and bottom layout">▤ Top / bottom</button><button id="reset" class="quiet">Reset demo</button></div>
+</header>
+<main>
+  <section class="intro"><div><p class="eyebrow">THE WORKSHOP LAB</p><h1>One request. An entire agent team.</h1><p>Plan a change, watch it take shape, and verify it before it ships.</p></div><div class="intro-note"><span>01 / PLAN</span><span>02 / BUILD</span><span>03 / VERIFY</span><strong>You approve the result.</strong></div></section>
+  <section class="runtime-bar" aria-label="Execution controls">
+    <label class="mode-label">Execution <select id="mode"><option value="guided">Guided example</option><option value="live">Live · local Gemma</option><option value="recorded">Recorded · last live run</option></select></label>
+    <div class="runtime-copy"><strong id="model-status" role="status">Local model not loaded</strong><small id="mode-note">Scripted agents, real executed tests. No model download required.</small></div>
+    <button id="load-model" class="primary">Load Gemma · ~2 GB</button><label class="file-label" title="Use an already downloaded Gemma E2B web model">Local file<input type="file" id="model-file" accept=".litertlm"></label>
+  </section>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <div id="workspace" class="workspace">
+    <section class="builder panel" aria-label="Builder workboard">
+      <div class="panel-heading"><div><span class="overline">01 / THE TEAM</span><h2>Builder workboard</h2></div><span class="tag" id="task-mode">GUIDED</span></div>
+      <form id="request-form">
+        <label for="request">What should the team improve?</label>
+        <textarea id="request" rows="2" maxlength="1000">Add manager approval for high-value expenses and explain why. Preserve already paid expenses.</textarea>
+        <div class="rule-fields"><label>Approval above ($)<input id="threshold" type="number" value="500" min="0.01" max="999999.99" step="0.01" required></label><label>Receipt above ($) · optional<input id="receipt" type="number" min="0.01" max="999999.99" step="0.01" placeholder="No additional rule"></label></div>
+        <div class="request-footer"><small>Scoped to <code>evaluateExpense()</code></small><button id="plan" type="submit" class="primary">Create plan <span>↗</span></button></div>
+      </form>
+      <div class="board" id="board" aria-label="Task lifecycle"></div>
+      <div class="agent-strip" id="agents"></div>
+      <section class="artifact"><div class="artifact-top"><h3 id="artifact-title">A clear contract comes first</h3><span id="attempt" class="muted">Waiting for a task</span></div>
+        <div class="tabs" role="tablist" aria-label="Task details"><button data-tab="plan" class="selected" role="tab" aria-selected="true">Plan</button><button data-tab="code" role="tab" aria-selected="false">Code</button><button data-tab="tests" role="tab" aria-selected="false">Tests <span id="test-count">—</span></button><button data-tab="activity" role="tab" aria-selected="false">Activity</button></div>
+        <div id="artifact-body" class="artifact-body" role="tabpanel"></div>
+      </section>
+      <div class="builder-footer"><button id="export" class="quiet" disabled>Export run</button><div><button id="cancel" class="quiet" hidden>Stop</button><button id="run" class="primary" disabled>Approve plan & run</button><button id="accept" class="success" hidden>Accept change</button></div></div>
+      <p class="boundary-note">Local demo only. No repository writes, real expenses, or payments.</p>
+    </section>
+    <div id="divider" role="separator" aria-label="Resize builder and application" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="70" aria-valuenow="48" tabindex="0"><span></span></div>
+    <section class="fintech panel" aria-label="Live expense application">
+      <div class="app-toolbar"><span><span class="app-logo">v</span> V135 <b>Spend</b></span><div class="preview-toggle" role="group" aria-label="Application version"><button id="show-accepted" class="selected" aria-pressed="true">Accepted</button><button id="show-candidate" aria-pressed="false" disabled>Candidate</button></div></div>
+      <div class="app-nav"><span class="nav-active">Expenses</span><span>Company workspace</span><span class="avatar">JD</span></div>
+      <div class="app-content"><div class="expense-heading"><div><p class="overline">SPEND MANAGEMENT</p><h2>Your expense inbox</h2><p>Know what needs a closer look.</p></div><span class="month">October 2026</span></div>
+        <div class="stats"><div><span>Submitted</span><strong id="submitted-total">—</strong><small>Across your team</small></div><div><span>Needs attention</span><strong id="needs-count">0</strong><small id="needs-note">Policy checks</small></div><div><span>Already paid</span><strong id="paid-total">—</strong><small>History preserved</small></div></div>
+        <div class="expense-filters"><label class="search-box"><span>⌕</span><input id="search" type="search" placeholder="Search merchant or employee" aria-label="Search expenses"></label><select id="filter" aria-label="Filter expenses"><option value="all">All expenses</option><option value="attention">Needs attention</option><option value="eligible">Eligible</option><option value="paid">Paid</option></select></div>
+        <div class="table-wrap"><table><thead><tr><th>Merchant / employee</th><th>Amount</th><th>Status</th></tr></thead><tbody id="expenses"></tbody></table></div>
+        <div id="expense-detail" class="expense-detail"></div>
+        <div class="app-status"><span id="preview-status">Accepted baseline</span><span>Synthetic data · USD</span></div>
+      </div>
+    </section>
+  </div>
+  <footer class="page-footer"><span>Same model. Separate role contexts. Deterministic verification.</span><a href="./README.md" target="_blank" rel="noopener">How this demo works ↗</a></footer>
+</main>
+<dialog id="receipt-dialog"><h2>Example receipt</h2><p id="receipt-copy"></p><p>This is synthetic workshop data, not a financial record.</p><form method="dialog"><button class="primary">Close</button></form></dialog>
+</body>
+</html>

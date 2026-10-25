@@ -1,0 +1,37 @@
+{
+  "version": "0.31.0",
+  "upstream": "https://github.com/justjake/quickjs-emscripten",
+  "purpose": "Pinned local QuickJS sandbox modules. Runtime bytes are unmodified; the browser needs no CDN imports for candidate execution.",
+  "files": [
+    {
+      "file": "core.mjs",
+      "source": "https://esm.sh/quickjs-emscripten-core@0.31.0/es2022/quickjs-emscripten-core.bundle.mjs",
+      "sha256": "77639627572ec7d7a1ce2ce0c618a6761fd311080454986038458d1fe3858834"
+    },
+    {
+      "file": "index.mjs",
+      "source": "https://cdn.jsdelivr.net/npm/@jitl/quickjs-singlefile-browser-release-sync@0.31.0/dist/index.mjs",
+      "sha256": "fa41bdbbbeb46ec467ca786016f2e8349c1470d80fdf3ba1b49b2973b0e3c695"
+    },
+    {
+      "file": "ffi.mjs",
+      "source": "https://cdn.jsdelivr.net/npm/@jitl/quickjs-singlefile-browser-release-sync@0.31.0/dist/ffi.mjs",
+      "sha256": "f2b8db0c8ae5c4ef466ab0479fb3a6c236aa4dd822dba1b806de3407fa25dd67"
+    },
+    {
+      "file": "emscripten-module.browser-VTL2UBYQ.mjs",
+      "source": "https://cdn.jsdelivr.net/npm/@jitl/quickjs-singlefile-browser-release-sync@0.31.0/dist/emscripten-module.browser-VTL2UBYQ.mjs",
+      "sha256": "8ef7651818d763b4399d46857cf17dad77a220ef42dba7a85429a3a6e7de0096"
+    },
+    {
+      "file": "LICENSE.core",
+      "source": "https://cdn.jsdelivr.net/npm/quickjs-emscripten-core@0.31.0/LICENSE",
+      "sha256": "3c6040aa318612a234cc951609b640c0c63d85ae5a98a9330d3116f1553a79db"
+    },
+    {
+      "file": "LICENSE.variant",
+      "source": "https://cdn.jsdelivr.net/npm/@jitl/quickjs-singlefile-browser-release-sync@0.31.0/LICENSE",
+      "sha256": "446a69ae534aa8612d8b16d3bfc670c5a5050597dca3ce9820441a60d5d04fbb"
+    }
+  ]
+}

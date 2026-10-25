@@ -1,0 +1,34 @@
+/* The working icon follows the controller phase. All other agents stay still. */
+.agent-strip{container-type:inline-size}
+.agent-strip .agent{min-width:0;padding:12px 10px;gap:11px;border-radius:10px;min-height:75px;position:relative}
+.agent-strip .agent-copy{min-width:0;display:flex;flex-direction:column;gap:6px}
+.agent-strip .agent-name{font-size:12px;font-weight:600;color:#dce3f2;line-height:1.2}
+.agent-strip .agent-status{display:flex;align-items:center;gap:5px;font-size:10px;line-height:1.3;color:#a9b5cc}
+.agent-status::before{content:'';width:5px;height:5px;border-radius:50%;background:#6e7b93;flex:none}
+.agent-icon{width:36px;height:36px;position:relative;display:grid;place-items:center;flex:none;color:#a0adc6}
+.agent-icon::before{content:'';position:absolute;inset:-4px;border:2px solid transparent;border-radius:50%}
+.agent-bot{width:32px;height:32px;overflow:visible;transform-origin:50% 70%}
+.agent-role-badge{position:absolute;width:17px;height:17px;right:-3px;bottom:-3px;display:grid;place-items:center;border:1px solid #52607c;border-radius:5px;background:#1b2333;color:#c6d0e4}
+.agent-role-badge svg{width:13px;height:13px}
+.agent-strip .agent[data-state='working']{border-color:#bea0ff;background:#302441;box-shadow:inset 0 0 0 1px #bea0ff33}
+.agent[data-state='working'] .agent-name{color:#f1e7ff}
+.agent[data-state='working'] .agent-status{color:#dfcaff;font-weight:650}
+.agent[data-state='working'] .agent-status::before{background:#dfcaff;box-shadow:0 0 7px #dfcaff99}
+.agent[data-state='working'] .agent-icon{color:#e0caff}
+.agent[data-state='working'] .agent-icon::before{border-color:#b994f838;border-top-color:#e1c9ff;border-right-color:#ad88ed;animation:agent-orbit 1.8s linear infinite}
+.agent[data-state='working'] .agent-bot{animation:agent-work 1.5s ease-in-out infinite}
+.agent[data-state='working'] .agent-eyes{animation:agent-blink 3.4s ease-in-out infinite;transform-origin:center}
+.agent[data-state='working'] .agent-role-badge{background:#614389;border-color:#ba95f4;color:#fff}
+.agent[data-state='finished'] .agent-status{color:#a5d9c5}
+.agent[data-state='finished'] .agent-status::before{background:#89cdb2}
+.agent[data-state='finished'] .agent-role-badge{color:#a5d9c5;border-color:#56786e}
+.agent[data-state='next'] .agent-status{color:#d0bfdc}
+.agent[data-state='paused'] .agent-status{color:#edc390}
+.agent[data-state='paused'] .agent-status::before{background:#d8ac78;border-radius:1px}
+@keyframes agent-orbit{to{transform:rotate(360deg)}}
+@keyframes agent-work{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-2px) rotate(4deg)}}
+@keyframes agent-blink{0%,42%,48%,100%{opacity:1}45%{opacity:.2}}
+@container(max-width:440px){.agent-strip .agent{flex-direction:column;align-items:center;text-align:center;padding:12px 5px;gap:10px}.agent-strip .agent-copy{align-items:center;gap:4px}}
+@media(max-width:540px){.agent-strip .agent{flex-direction:column;align-items:center;text-align:center;padding:12px 5px;gap:10px}.agent-strip .agent-copy{align-items:center;gap:4px}.agent-strip .agent-name{font-size:11px}.agent-strip .agent-status{font-size:9px}}
+@media(min-width:1001px){.stacked .agent-strip .agent{flex-direction:column;text-align:center;padding:12px 5px;gap:10px}.stacked .agent-copy{align-items:center}}
+@media(prefers-reduced-motion:reduce){.agent-strip .agent *,.agent-strip .agent *::before,.agent-strip .agent *::after{animation:none!important;transition:none!important}.agent[data-state='working'] .agent-icon::before{border-color:#bb93ec;border-style:dashed}}

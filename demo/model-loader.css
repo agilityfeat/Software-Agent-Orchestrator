@@ -1,0 +1,98 @@
+/* Model awakening: local CSS shapes, no image/CDN assets or timer-driven fake progress. */
+.runtime-bar.has-model-loader {flex-wrap:wrap}
+.model-awakening {--bot-accent:#bba5ff;--bot-glow:#bba5ff38;display:grid;grid-template-columns:106px minmax(0,1fr) auto;gap:18px;align-items:center;flex:0 0 100%;min-width:0;padding:5px 4px 12px;border-bottom:1px solid #34334e;color:#e8e7ff}
+.model-awakening .bot-scene {position:relative;width:106px;height:110px;isolation:isolate;transition:height .3s}
+.model-awakening .bot-copy {min-width:0}
+.model-awakening .bot-heading {display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.model-awakening .bot-title {font-size:17px;font-weight:600;letter-spacing:-.3px;margin:0;line-height:1.35}
+.model-awakening .bot-detail {font-size:11px;line-height:1.6;color:#aab6cf;margin:7px 0;overflow-wrap:anywhere}
+.model-awakening .bot-badge {font-size:9px;font-weight:750;letter-spacing:1px;white-space:nowrap;color:var(--bot-accent);background:#262239;border:1px solid #72618b;padding:5px 8px;border-radius:20px}
+.model-awakening .bot-progress {height:6px;margin-top:13px;border-radius:5px;background:#2a3045;overflow:hidden;width:min(100%,560px)}
+.model-awakening .bot-progress-fill {display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#9680ed,#d4c7ff);transition:width .2s linear}
+.model-awakening .bot-progress.indeterminate .bot-progress-fill {animation:bot-scan 1.7s ease-in-out infinite}
+.model-awakening .bot-steps {display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;color:#8290ac;font-size:9px;letter-spacing:.4px}
+.model-awakening .bot-step.current {color:#d4c7ff}
+.model-awakening .bot-step.complete {color:#8fe3c2}
+.model-awakening .bot-controls {display:flex;flex-direction:column;gap:7px;align-items:flex-end}
+.model-awakening .bot-controls button {font-size:9px;padding:7px 9px}
+.model-awakening .bot-motion {color:#b4bfd5;background:transparent}
+.model-awakening .bot-halo {position:absolute;inset:7px 0 0;background:radial-gradient(ellipse,var(--bot-glow),transparent 70%);border-radius:50%;opacity:.6}
+.model-awakening .little-bot {position:absolute;top:23px;left:18px;width:70px;height:76px;transform-origin:50% 90%;z-index:2}
+.model-awakening .bot-head {position:absolute;width:62px;height:43px;left:4px;top:0;background:linear-gradient(135deg,#e5dfff,#a799d3);border:1px solid #f1eaff;border-radius:17px;box-shadow:inset 0 -4px 0 #675b9140;transition:transform .5s,filter .5s}
+.model-awakening .bot-face {position:absolute;inset:7px 6px;border-radius:10px;background:#192335;box-shadow:inset 0 2px 4px #0006}
+.model-awakening .bot-eye {position:absolute;top:7px;width:8px;height:10px;border-radius:5px;background:var(--bot-accent);box-shadow:0 0 9px var(--bot-glow);transition:transform .4s,background .4s}
+.model-awakening .eye-left {left:10px}
+.model-awakening .eye-right {right:10px}
+.model-awakening .bot-mouth {position:absolute;bottom:5px;left:21px;width:7px;height:3px;border-radius:0 0 6px 6px;border-bottom:2px solid var(--bot-accent)}
+.model-awakening .bot-antenna {position:absolute;width:2px;height:11px;top:-11px;left:29px;background:#b5a6e6}
+.model-awakening .bot-antenna-light {position:absolute;width:7px;height:7px;border-radius:50%;top:-4px;left:-2.5px;background:var(--bot-accent);box-shadow:0 0 12px var(--bot-glow)}
+.model-awakening .bot-body {position:absolute;top:47px;left:14px;width:42px;height:24px;border-radius:8px 8px 12px 12px;background:linear-gradient(130deg,#c7bceb,#8a7caf);border:1px solid #ccbfef;transition:transform .5s}
+.model-awakening .bot-heart {position:absolute;width:9px;height:9px;top:6px;left:15px;border:1px solid #eee5ff;background:var(--bot-accent);border-radius:3px;transform:rotate(45deg);box-shadow:0 0 13px var(--bot-glow)}
+.model-awakening .bot-arm {position:absolute;width:8px;height:21px;top:49px;border-radius:8px;background:#b7a8dc;transform-origin:50% 4px;transition:transform .5s}
+.model-awakening .arm-left {left:1px;transform:rotate(15deg)}
+.model-awakening .arm-right {right:1px;transform:rotate(-15deg)}
+.model-awakening .bot-platform {position:absolute;bottom:4px;left:26px;width:54px;height:7px;border-radius:50%;background:#b09be827;box-shadow:0 0 14px #c2abff16}
+.model-awakening .bot-orbit {position:absolute;inset:6px 0;border:1px dashed #9f88dd50;border-radius:50%;opacity:0}
+.model-awakening .bot-spark {position:absolute;width:5px;height:5px;border-radius:2px;background:var(--bot-accent);box-shadow:0 0 9px var(--bot-glow)}
+.model-awakening .spark-0 {top:13px;left:6px}
+.model-awakening .spark-1 {right:6px;top:33px;width:4px;height:4px}
+.model-awakening .spark-2 {bottom:5px;left:48px;width:3px;height:3px}
+.model-awakening .bot-sleep {position:absolute;right:4px;top:6px;font-size:12px;font-weight:600;letter-spacing:3px;color:#ad9bcf;opacity:0;transform:rotate(-12deg)}
+.model-awakening[data-phase="idle"] .bot-scene {height:78px}
+.model-awakening[data-phase="idle"] .little-bot {transform:scale(.72) rotate(-8deg);top:0}
+.model-awakening[data-phase="idle"] .bot-eye {transform:scaleY(.15)}
+.model-awakening[data-phase="idle"] .bot-head {filter:saturate(.4)}
+.model-awakening[data-phase="idle"] .bot-sleep {opacity:1}
+.model-awakening[data-phase="idle"] .bot-steps {display:none}
+.model-awakening.is-loading .bot-orbit {opacity:1;animation:bot-orbit 5s linear infinite}
+.model-awakening.is-loading .bot-halo {animation:bot-glow 2s ease-in-out infinite}
+.model-awakening.is-loading .little-bot {animation:bot-float 2.6s ease-in-out infinite}
+.model-awakening:is([data-phase="preparing"],[data-phase="downloading"]) .bot-head {animation:bot-assemble-head 2.6s ease-in-out infinite}
+.model-awakening:is([data-phase="preparing"],[data-phase="downloading"]) .bot-body {animation:bot-assemble-body 2.6s ease-in-out infinite}
+.model-awakening:is([data-phase="preparing"],[data-phase="downloading"]) .arm-left {animation:bot-assemble-left 2.6s ease-in-out infinite}
+.model-awakening:is([data-phase="preparing"],[data-phase="downloading"]) .arm-right {animation:bot-assemble-right 2.6s ease-in-out infinite}
+.model-awakening.is-loading .bot-eye {animation:bot-eyes 2.6s ease-in-out infinite}
+.model-awakening[data-phase="initializing"] .bot-heart {animation:bot-heartbeat 1.4s ease-in-out infinite}
+.model-awakening.is-online {--bot-accent:#8fe8c4;--bot-glow:#8fe8c44a}
+.model-awakening.is-online .bot-badge {color:#a9f4d6;background:#17352c;border-color:#38765e}
+.model-awakening.is-online .bot-halo {opacity:1}
+.model-awakening.is-online .bot-eye {animation:bot-blink 5s ease-in-out infinite}
+.model-awakening.just-awoke .little-bot {animation:bot-ready-pop .7s cubic-bezier(.2,.8,.3,1.3) both}
+.model-awakening.just-awoke .arm-right {animation:bot-wave 1.6s ease-in-out .3s both}
+.model-awakening[data-phase="working"] .little-bot {animation:bot-float 2.6s ease-in-out infinite}
+.model-awakening[data-phase="working"] .bot-heart {animation:bot-heartbeat 1.4s ease-in-out infinite}
+.model-awakening:is([data-phase="error"],[data-phase="stopped"]) {--bot-accent:#f4bd8a;--bot-glow:#f4bd8a24}
+.model-awakening:is([data-phase="error"],[data-phase="stopped"]) .bot-head {transform:rotate(-9deg);filter:saturate(.3)}
+.model-awakening:is([data-phase="error"],[data-phase="stopped"]) .bot-eye {transform:scaleY(.4)}
+.model-awakening:is([data-phase="error"],[data-phase="stopped"]) .bot-badge {background:#35291d;border-color:#755435;color:#f4bd8a}
+.model-awakening:is([data-phase="error"],[data-phase="stopped"]) .bot-steps {display:none}
+.model-awakening.motion-paused *, .model-awakening.motion-paused *::before, .model-awakening.motion-paused *::after {animation-play-state:paused!important;transition:none!important}
+@keyframes bot-orbit {to{transform:rotate(360deg)}}
+@keyframes bot-float {0%,100%{translate:0 0}50%{translate:0 -5px}}
+@keyframes bot-glow {0%,100%{opacity:.5;scale:.92}50%{opacity:1;scale:1.06}}
+@keyframes bot-assemble-head {0%,100%{transform:translateY(-5px) rotate(-3deg)}50%{transform:translateY(0) rotate(0)}}
+@keyframes bot-assemble-body {0%,100%{transform:translateY(5px)}50%{transform:translateY(0)}}
+@keyframes bot-assemble-left {0%,100%{transform:translate(-4px,3px) rotate(35deg)}50%{transform:translate(0,0) rotate(15deg)}}
+@keyframes bot-assemble-right {0%,100%{transform:translate(4px,3px) rotate(-35deg)}50%{transform:translate(0,0) rotate(-15deg)}}
+@keyframes bot-eyes {0%,100%{transform:scaleY(.25)}40%,65%{transform:scaleY(1)}}
+@keyframes bot-blink {0%,42%,47%,100%{transform:scaleY(1)}44%,45%{transform:scaleY(.1)}}
+@keyframes bot-heartbeat {0%,100%{transform:rotate(45deg) scale(.85);opacity:.6}50%{transform:rotate(45deg) scale(1.2);opacity:1}}
+@keyframes bot-ready-pop {0%{transform:scale(.85)}50%{transform:translateY(-9px) scale(1.07)}100%{transform:none}}
+@keyframes bot-wave {0%,100%{transform:rotate(-15deg)}25%,65%{transform:rotate(-135deg)}45%,85%{transform:rotate(-90deg)}}
+@keyframes bot-scan {0%{transform:translateX(-100%)}100%{transform:translateX(440%)}}
+@media(max-width:700px) {
+  .model-awakening {grid-template-columns:90px minmax(0,1fr);gap:12px;padding:4px 0 12px}
+  .model-awakening .bot-scene {width:90px}
+  .model-awakening .little-bot {left:10px}
+  .model-awakening .bot-title {font-size:14px}
+  .model-awakening .bot-controls {grid-column:1/-1;flex-direction:row;justify-content:flex-end}
+  .model-awakening .bot-steps {gap:8px;font-size:8px}
+  .model-awakening .bot-badge {font-size:8px}
+  .runtime-bar.has-model-loader>.mode-label {min-width:0;flex-wrap:wrap}
+  .runtime-bar.has-model-loader>.mode-label select {max-width:100%}
+}
+@media(prefers-reduced-motion:reduce) {
+  .model-awakening *, .model-awakening *::before, .model-awakening *::after {animation:none!important;transition:none!important}
+  .model-awakening .bot-motion {display:none}
+  .model-awakening .bot-progress.indeterminate .bot-progress-fill {width:100%!important;opacity:.4}
+}
