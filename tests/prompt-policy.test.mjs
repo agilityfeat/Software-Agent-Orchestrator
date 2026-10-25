@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {DEFAULT_APP_REQUEST} from '../demo/presentation.mjs';
 import {DEFAULT_REQUEST,policyFromPrompt} from '../demo/prompt-policy.mjs';
 
 for(const [request,thresholdCents,receiptCents]of [
@@ -38,9 +39,9 @@ for(const request of [
   'Manager approval above $1,000,000.',
 ])test(`uncertain prompt cannot silently infer a rule: ${request}`,()=>assert.throws(()=>policyFromPrompt(request)));
 
-test('the form contains one prompt and its visible default is the explicit interpreted request',async()=>{
+test('the form contains one generic app request without policy parameter controls',async()=>{
   const html=await readFile(new URL('../demo/index.html',import.meta.url),'utf8');
   const form=html.match(/<form id="request-form">([\s\S]*?)<\/form>/)[1];
-  assert.equal(form.match(/<textarea[^>]*>([^<]*)<\/textarea>/)[1],DEFAULT_REQUEST);
+  assert.equal(form.match(/<textarea[^>]*>([^<]*)<\/textarea>/)[1],DEFAULT_APP_REQUEST);
   assert.doesNotMatch(form,/<input|rule-fields|evaluateExpense/);
 });

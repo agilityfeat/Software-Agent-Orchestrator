@@ -1,3 +1,4 @@
+import {appearanceEvidenceValid} from './presentation.mjs';
 // Deterministic contract and evidence. Models never own expected outcomes.
 export const BASE_SOURCE = `function evaluateExpense(expense) {
   if (expense.status === 'paid') return {status: 'paid', reason: 'Already paid', canApprove: false};
@@ -95,7 +96,9 @@ export function extraCases(value) {
   });
 }
 export function canAccept(task) {
-  if(!(task && task.rule && task.mode !== 'recorded' && task.status === 'Review' && task.candidate && task.evidence?.hash === task.hash && Array.isArray(task.evidence?.rows) && task.evidence.rows.every(x=>x.pass)))return false;
+  if(!(task && task.mode !== 'recorded' && task.status === 'Review' && task.candidate && task.evidence?.hash === task.hash && Array.isArray(task.evidence?.rows) && task.evidence.rows.every(x=>x.pass)))return false;
+  if(task.kind==='appearance')return appearanceEvidenceValid(task);
+  if(!task.rule)return false;
   // Persisted evidence must cover today's immutable cases, not only an old count.
   return requiredCases(task.rule).every(test=>task.evidence.rows.some(row=>
     row.input?.amountCents===test.input.amountCents && row.input?.status===test.input.status && row.input?.receipt===test.input.receipt &&

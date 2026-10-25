@@ -21,35 +21,57 @@ be evicted by the browser. Reset demo preserves the model cache. The package,
 WASM and model hosts need network access on first use; this is not an offline
 installation guarantee. Model weights are not distributed in this repository.
 
-Start with **Guided example** to explore without downloading a model. Its agent
-outputs are explicitly scripted, but its tests execute the candidate function.
-The first candidate deliberately gets the exact threshold wrong; the second
-fixes it. This is not represented as a recorded model execution.
+Start with **Guided example** to explore without downloading a model. Its default
+receipt appearance example is explicitly scripted: a mismatched style fails
+real checks, then repairs it. An explicit expense-policy request also supports
+the scripted boundary repair example. Choose **Live** for your own supported app
+improvement. Guided examples are never presented as recorded model executions.
 
 ## Workshop flow
 
-1. Describe the expense policy in one prompt. For example: “Require manager approval for expenses above $500. Preserve already paid expenses.” Add “Require receipts above $75” only when wanted.
+1. Describe the app improvement in one prompt. The default is “Make view receipt match the rest of the look and feel.”
 2. Create a plan. Review **What the change must do**, the interpreted rules alongside the plan, before approving it.
 3. Approve the plan and run Planner → Coder → Tester with separate role contexts.
-4. Inspect the candidate source, real test results, hash and repair history.
+4. Inspect the candidate appearance or policy, executed checks, hash and repair history.
 5. Compare Accepted/Candidate previews, then **Accept change** to promote locally.
 
 The model performs planning before authorization; the approved execution starts
 with Coder. It is one shared model, not three simultaneously loaded models.
 Two correction cycles are permitted after the initial implementation.
 
-Only `evaluateExpense(expense)` is editable. The money contract uses integer
-cents. Approval applies strictly **above** the threshold, paid history remains
-unchanged, and a missing required receipt takes priority over manager review.
-The prompt supplies the amounts. A bounded, deterministic reader supports manager
-approval and optional receipt requirements strictly above a dollar amount,
-including “Expenses above $500 need manager review.” Missing amounts, conflicting
-limits, negation, ranges, inclusive limits and unsupported conditions are rejected
-before planning; there is no hidden default amount. Editing the prompt clears the
-previous plan so it cannot authorize an older request. Saved pending plans must
-match their request before they can proceed. Models never choose the expected
-outcomes of the protected tests.
-This initial slice does not implement arbitrary component/repository editing.
+The Planner routes every Live request to an editable scope before implementation:
+
+- **App appearance:** colors, corners and typography for the expense app, receipt
+  dialog and buttons, summary cards, heading and table rows; receipt padding and
+  row spacing are also editable. The Planner selects supported surfaces and
+  reviewed goals. Coder returns a finite JSON token patch, never arbitrary CSS,
+  HTML, selectors or JavaScript. “Match app” goals use the existing app design
+  tokens as exact host-checked targets, including the complete receipt workflow.
+- **Expense policy:** the existing `evaluateExpense(expense)` function. For example:
+  “Require manager approval for expenses above $500. Preserve already paid expenses.”
+  Add “Require receipts above $75” when wanted. The scoped deterministic reader
+  interprets explicit amounts after routing; it does not gate appearance requests.
+  Ambiguous amounts, negation, ranges and unsupported policies stop clearly.
+- New features, new data operations and arbitrary repository edits remain outside
+  this static workbench. The Planner must explain unsupported requests rather
+  than pretending to implement them.
+
+Appearance checks validate schema, approved surfaces, actual changes, contrast
+and match-app intent. Preview and acceptance inspect actual rendered text,
+including descendants; previously readable text must stay readable and existing
+faint labels cannot become less readable. The complete resolved baseline plus
+candidate configuration has a canonical SHA-256. Raw Coder and Tester responses
+are retained for diagnosis. A malformed appearance QA reply gets one real-model
+format correction; a second invalid reply blocks, without dropping checks.
+
+Appearance and expense policy persist separately. Every appearance task freezes
+the accepted policy source/hash and all six executed expense results; acceptance
+re-executes those checks and cannot promote a business-logic change. Receipt
+content remains unchanged. Policy tasks retain integer-cent boundaries, paid
+history, optional receipt precedence and isolated QuickJS execution. Editing a
+prompt invalidates its old pending plan; saved pending plans must still match
+current accepted state. Review **What the change must do** before running and
+compare Accepted/Candidate views before accepting.
 
 The workboard uses Backlog → Ready → Active → Review → Done with an explicit
 Blocked condition. This demo handles one current task, not a multi-project queue.
@@ -75,15 +97,18 @@ buttons and receipts are synthetic; no payment or external business action occur
   API. An outer worker timeout is an additional limit. Pinned modules, embedded
   WASM, licenses and upstream SHA-256 provenance live in `vendor/quickjs-0.31.0/`;
   candidate execution requires no CDN imports or broader worker policy.
-- `prompt-policy.mjs`: explicit prompt-to-policy interpretation; unsupported or
-  ambiguous requests produce a plain clarification instead of an inferred amount.
+- `presentation.mjs`: finite appearance schema, canonical full configuration,
+  approved-surface/contrast/match-app checks, safe token application and actual
+  rendered-text audits. It does not execute model CSS or change receipt content.
+- `prompt-policy.mjs`: scoped policy interpretation after Planner routing;
+  ambiguous policy requests produce a clarification instead of an inferred amount.
 - `core.mjs`: protected expectations, output schemas and exact-code SHA-256.
   The Tester proposes data-only cases; the host calculates expected results.
   A model's prose never creates a passing test. Default-policy checks include
   missing-receipt boundaries; preview and acceptance recheck every displayed
   expense against the current oracle, including saved runs with old evidence.
   Using the same model for QA does not provide independent model judgment; deterministic checks are essential.
-- `controller.mjs`: authorization, bounded repair, versioned evidence, cancellation
+- `controller.mjs`: typed Planner routing, authorization, bounded repair, versioned evidence, cancellation
   fencing and exact-result acceptance. Previously tested code cannot be edited
   and accepted under an old hash.
 - `agent-activity.mjs`: Planning, Building and Checking icons show which role
@@ -116,12 +141,13 @@ live. To disable publishing, disable the deployment workflow/Pages in settings.
 
 ```sh
 # Deterministic contract/controller tests; no model or paid provider calls.
-node --test tests/demo.test.mjs
+node --test tests/demo.test.mjs tests/presentation.test.mjs tests/prompt-policy.test.mjs
 
 # Browser smoke: install Playwright separately, outside the repository runtime.
 python3 -m pip install playwright
 python3 -m playwright install chromium
 python3 tests/demo-browser.py
+python3 tests/presentation-browser.py
 
 # Optional UI-only adapter when external sandbox assets are unavailable.
 python3 tests/demo-browser.py --offline-ui
@@ -132,6 +158,10 @@ HTTPS requests blocked, without downloading Gemma. `--offline-ui` replaces ONLY
 the test's sandbox route with a Node VM adapter; it does not validate the production sandbox. Screenshots go to a
 system temporary directory by default, outside the checkout.
 
+The appearance browser regression uses an explicitly synthetic model adapter to
+exercise routing, generic surfaces, persistence, contrast and cancellation. It
+does not prove Gemma inference.
+
 Deterministic tests and the production QuickJS browser smoke pass, including
 host-API isolation, interruption, acceptance, persistence and rejection of stale
 passing evidence. On 2026-10-25, a native desktop Chrome Live run downloaded the
@@ -139,7 +169,11 @@ passing evidence. On 2026-10-25, a native desktop Chrome Live run downloaded the
 and passed 10 executed checks before human acceptance. The $500 expense remained
 eligible, larger submitted expenses required manager review, and paid history
 remained paid. Reloading reused the browser model cache; Recorded mode retained
-the accepted real run. This is one laptop's observed result, not a performance
+the accepted real run. A later real Chrome/Gemma appearance run completed the
+default receipt request on its first candidate, passed nine executed checks, and
+was accepted. The receipt dialog and buttons matched the light app; expense
+results were preserved. Done and Recorded survived reload. This is one laptop's
+observed result, not a performance
 or cross-device success guarantee. Repeat the Live smoke at the Pages deployment
 URL to verify hosted asset paths and that browser's origin-specific cache.
 
