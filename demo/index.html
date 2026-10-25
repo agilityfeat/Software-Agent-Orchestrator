@@ -6,12 +6,13 @@
   <meta name="description" content="A local-first software agent workbench paired with a live expense application. One model, three roles, real tests.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://esm.sh https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>Agents at Work · Software Agent Orchestrator</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./styles.css"><script type="module" src="./app.mjs"></script>
 </head>
 <body>
 <header class="topbar">
   <a class="brand" href="./" aria-label="Agents at Work home"><span class="brandmark">S<span>O</span></span><span>Agents at Work<small>SOFTWARE AGENT ORCHESTRATOR</small></span></a>
-  <div class="top-actions"><span class="local-label"><i></i> Your browser. Your model.</span><button id="layout" class="quiet" aria-label="Switch to top and bottom layout">▤ Top / bottom</button><button id="reset" class="quiet">Reset demo</button></div>
+  <div class="top-actions"><a class="quiet" href="./workboard/">Developer workboard</a><span class="local-label"><i></i> Your browser. Your model.</span><button id="layout" class="quiet" aria-label="Switch to top and bottom layout">▤ Top / bottom</button><button id="reset" class="quiet">Reset demo</button></div>
 </header>
 <main>
   <section class="runtime-bar" aria-label="Execution controls">

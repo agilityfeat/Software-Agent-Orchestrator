@@ -1,0 +1,10 @@
+{
+  "generator": "scripts/generate-workboard-preview.mjs",
+  "source": "public/",
+  "sha256": {
+    "index.html": "58f80e2b1daa93cd601b038ca776815434157e430b959c24711167ee40eea5d9",
+    "styles.css": "d35273492f090660399bce4e09d8a1d079f2be9d55a404227908d5ae9d0ecb05",
+    "workboard.js": "abda6ca3c39ce7e973e73baa944ff9bbcf7af00ffc2f22e484cc1d8afced1197",
+    "workboard-model.js": "f9666b7b4efc1420dba54be8b5459e56b65ffec0fdceebf1df1d9a9f088ba472"
+  }
+}
