@@ -28,8 +28,8 @@ fixes it. This is not represented as a recorded model execution.
 
 ## Workshop flow
 
-1. Review the request and set an approval threshold, optionally a receipt threshold.
-2. Create a plan. Review the immutable acceptance criteria alongside the plan.
+1. Describe the expense policy in one prompt. For example: “Require manager approval for expenses above $500. Preserve already paid expenses.” Add “Require receipts above $75” only when wanted.
+2. Create a plan. Review **What the change must do**, the interpreted rules alongside the plan, before approving it.
 3. Approve the plan and run Planner → Coder → Tester with separate role contexts.
 4. Inspect the candidate source, real test results, hash and repair history.
 5. Compare Accepted/Candidate previews, then **Accept change** to promote locally.
@@ -41,8 +41,14 @@ Two correction cycles are permitted after the initial implementation.
 Only `evaluateExpense(expense)` is editable. The money contract uses integer
 cents. Approval applies strictly **above** the threshold, paid history remains
 unchanged, and a missing required receipt takes priority over manager review.
-The numeric controls are the authoritative requirements. Free-text context may
-clarify wording, but does not grant new capabilities or redefine the test oracle.
+The prompt supplies the amounts. A bounded, deterministic reader supports manager
+approval and optional receipt requirements strictly above a dollar amount,
+including “Expenses above $500 need manager review.” Missing amounts, conflicting
+limits, negation, ranges, inclusive limits and unsupported conditions are rejected
+before planning; there is no hidden default amount. Editing the prompt clears the
+previous plan so it cannot authorize an older request. Saved pending plans must
+match their request before they can proceed. Models never choose the expected
+outcomes of the protected tests.
 This initial slice does not implement arbitrary component/repository editing.
 
 The workboard uses Backlog → Ready → Active → Review → Done with an explicit
@@ -69,6 +75,8 @@ buttons and receipts are synthetic; no payment or external business action occur
   API. An outer worker timeout is an additional limit. Pinned modules, embedded
   WASM, licenses and upstream SHA-256 provenance live in `vendor/quickjs-0.31.0/`;
   candidate execution requires no CDN imports or broader worker policy.
+- `prompt-policy.mjs`: explicit prompt-to-policy interpretation; unsupported or
+  ambiguous requests produce a plain clarification instead of an inferred amount.
 - `core.mjs`: protected expectations, output schemas and exact-code SHA-256.
   The Tester proposes data-only cases; the host calculates expected results.
   A model's prose never creates a passing test. Default-policy checks include

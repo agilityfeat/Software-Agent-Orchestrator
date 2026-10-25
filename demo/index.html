@@ -26,9 +26,8 @@
       <div class="panel-heading"><div><span class="overline">01 / THE TEAM</span><h2>Builder workboard</h2></div><span class="tag" id="task-mode">GUIDED</span></div>
       <form id="request-form">
         <label for="request">What should the team improve?</label>
-        <textarea id="request" rows="2" maxlength="1000">Add manager approval for high-value expenses and explain why. Preserve already paid expenses.</textarea>
-        <div class="rule-fields"><label>Approval above ($)<input id="threshold" type="number" value="500" min="0.01" max="999999.99" step="0.01" required></label><label>Receipt above ($) · optional<input id="receipt" type="number" min="0.01" max="999999.99" step="0.01" placeholder="No additional rule"></label></div>
-        <div class="request-footer"><small>Scoped to <code>evaluateExpense()</code></small><button id="plan" type="submit" class="primary">Create plan <span>↗</span></button></div>
+        <textarea id="request" rows="3" maxlength="1000" required>Require manager approval for expenses above $500 and explain why. Preserve already paid expenses.</textarea>
+        <div class="request-footer"><small>Review the plan before anything changes.</small><button id="plan" type="submit" class="primary">Create plan <span>↗</span></button></div>
       </form>
       <div class="board" id="board" aria-label="Task lifecycle"></div>
       <div class="agent-strip" id="agents"></div>
