@@ -28,7 +28,9 @@ export class LocalModel {
     if (type === 'load') this.notify('preparing', 'Checking your device and preparing the local runtime…');
     if (!this.worker) {
       let worker;
-      try {worker = new Worker(new URL('./model-worker.mjs', import.meta.url), {type: 'module'});}
+      // LiteRT-LM loads its WASM glue with importScripts(), which requires a classic worker.
+      // model-worker.mjs uses dynamic import() for the SDK; keep that entrypoint classic-compatible.
+      try {worker = new Worker(new URL('./model-worker.mjs', import.meta.url), {type: 'classic'});}
       catch (error) {this.notify('error', String(error.message || error)); throw error;}
       this.worker = worker;
       worker.onmessage = ({data}) => {
