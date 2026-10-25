@@ -36,10 +36,13 @@ HARNESS = r'''async ({sources, sdk, mode}) => {
     let workerSource;
     if (mode === 'runtime') {
       // Actual SDK/WASM initialization only: never requests model weights.
-      workerSource = `self.onmessage = async () => {
+      const runtimeStart = sources['model-worker.mjs'].indexOf('  const {Engine,loadLiteRtLm}');
+      const runtimeEnd = sources['model-worker.mjs'].indexOf('  let source=file');
+      if (runtimeStart < 0 || runtimeEnd < runtimeStart) throw Error('Production runtime setup changed');
+      const runtimeSetup = sources['model-worker.mjs'].slice(runtimeStart, runtimeEnd);
+      workerSource = `const SDK=${JSON.stringify(sdk)}; self.onmessage = async () => {
         try {
-          const {loadLiteRtLm} = await import(${JSON.stringify(sdk + '/+esm')});
-          await loadLiteRtLm(${JSON.stringify(sdk + '/wasm/')});
+          ${runtimeSetup}
           self.postMessage({type:'loaded'});
         } catch (error) {self.postMessage({error:String(error.message || error)});}
       };`;
@@ -48,6 +51,14 @@ HARNESS = r'''async ({sources, sdk, mode}) => {
       const fixtureSdk = scriptUrl(`
         export async function loadLiteRtLm(path) {
           if (path !== ${JSON.stringify(sdk + '/wasm/')}) throw Error('Unexpected WASM path');
+          // Match the pinned SDK's Emscripten Module configuration contract.
+          // Checking all variants preserves runtime feature selection.
+          for (const filename of ['litertlm_wasm_internal.wasm', 'litertlm_wasm_compat_internal.wasm',
+              'litertlm_wasm_asyncify_internal.wasm', 'litertlm_wasm_compat_asyncify_internal.wasm']) {
+            if (self.Module?.locateFile?.(filename) !== path + filename) {
+              throw Error('WASM locator did not preserve the pinned CDN path: ' + filename);
+            }
+          }
           // The browser performs this call. A module worker must fail here.
           importScripts(${JSON.stringify(glue)});
           if (!self.__syntheticGlueLoaded) throw Error('Glue not executed');
@@ -62,6 +73,8 @@ HARNESS = r'''async ({sources, sdk, mode}) => {
       `);
       workerSource = replaceOnce(sources['model-worker.mjs'],
         'await import(`${SDK}/+esm`)', `await import(${JSON.stringify(fixtureSdk)})`);
+      if (mode === 'missing-locator') workerSource = replaceOnce(workerSource,
+        'self.Module={locateFile:filename=>new URL(filename,`${SDK}/wasm/`).href};', '');
       // Only the test fixture gets a fake GPU and a fake model file. No network fallback.
       workerSource = `Object.defineProperty(navigator, 'gpu', {value:{requestAdapter:async()=>({})}});
         self.fetch = () => {throw Error('Unexpected network request in fixture');};\n` + workerSource;
@@ -103,12 +116,18 @@ with sync_playwright() as p:
         page.set_content('<!doctype html><title>Worker compatibility regression</title>')
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
+        requests = []
+        page.on('request', lambda request: requests.append(request.url))
         def run(mode):
             return page.evaluate(HARNESS, {'sources':sources, 'sdk':sdk_match.group(1), 'mode':mode})
         negative = run('negative')
         assert not negative['ok'] and not negative['ready'], negative
         assert 'importScripts' in negative.get('error',''), negative
         print('PASS negative control: module worker rejected importScripts:', negative['error'])
+        missing_locator = run('missing-locator')
+        assert not missing_locator['ok'] and not missing_locator['ready'], missing_locator
+        assert 'WASM locator' in missing_locator.get('error',''), missing_locator
+        print('PASS negative control: missing CDN locator rejected:', missing_locator['error'])
         result = run('classic')
         assert result['ok'] and result['ready'] and result['sameWorker'], result
         assert result['replies'] == ['synthetic reply'] * 3, result
@@ -122,6 +141,8 @@ with sync_playwright() as p:
         if args.runtime:
             runtime = run('runtime')
             assert runtime['ok'] and runtime['ready'], json.dumps(runtime)
-            print('PASS real pinned SDK/WASM initialization (no weights, no inference).')
+            wasm_requests = [url for url in requests if url.endswith('.wasm')]
+            assert wasm_requests and all(url.startswith(sdk_match.group(1) + '/wasm/') for url in wasm_requests), wasm_requests
+            print('PASS production runtime setup: real pinned SDK/WASM initialization from CDN (no weights, no inference):', wasm_requests)
     finally:
         browser.close()

@@ -9,6 +9,9 @@ async function loadModel(file) {
   if(!self.navigator.gpu || !await navigator.gpu.requestAdapter()) throw Error('WebGPU is unavailable. Use a compatible desktop browser or Guided example.');
   status('preparing','Loading the local model runtime…');
   const {Engine,loadLiteRtLm}=await import(`${SDK}/+esm`);
+  // The pinned SDK consumes Emscripten's Module configuration. In a classic
+  // worker the glue otherwise resolves WASM beside this worker, not its CDN URL.
+  self.Module={locateFile:filename=>new URL(filename,`${SDK}/wasm/`).href};
   await loadLiteRtLm(`${SDK}/wasm/`);
   let source=file,origin=file?'file':'download';
   if(!source){
