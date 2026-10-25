@@ -55,16 +55,17 @@ try:
         page.wait_for_function("() => document.getElementById('expenses').children.length===6")
         assert page.locator('#needs-count').inner_text() == '0'
         default_request=page.locator('#request').input_value()
-        assert 'above $500' in default_request
+        assert default_request == 'Make view receipt match the rest of the look and feel.'
+        policy_request='Require manager approval for expenses above $500 and explain why. Preserve already paid expenses.'
         assert page.locator('#request-form input').count() == 0
         assert page.locator('#threshold, #receipt, .rule-fields').count() == 0
         page.locator('#request').fill('Add manager approval for high-value expenses.')
         page.locator('#plan').click()
         page.wait_for_function("() => !document.getElementById('notice').hidden")
-        assert 'one clear amount' in page.locator('#notice').inner_text()
+        assert 'Guided example' in page.locator('#notice').inner_text()
         assert page.locator('#run').is_disabled()
         assert page.locator('#accept').is_hidden()
-        page.locator('#request').fill(default_request)
+        page.locator('#request').fill(policy_request)
         assert page.locator('#agents .agent-name').all_text_contents() == ['Planning','Building','Checking']
         assert page.locator('#agents .agent-status').all_text_contents() == ['Waiting'] * 3
         assert page.locator('#agents .agent-bot').count() == 3
