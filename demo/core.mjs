@@ -86,9 +86,11 @@ export function validatePlan(value) {
   return {summary:value.summary.slice(0,500),steps:value.steps};
 }
 export function extraCases(value) {
-  if (!value || !Array.isArray(value.cases) || value.cases.length > 6 || typeof value.summary !== 'string') throw Error('QA must return a summary and at most six data-only cases.');
+  if(!value || typeof value.summary!=='string')throw Error('QA summary must be a string describing the executed results.');
+  if(!Array.isArray(value.cases))throw Error('QA cases must be an array of additional inputs; use [] when none are needed.');
+  if(value.cases.length>6)throw Error(`QA returned ${value.cases.length} additional cases; the maximum is 6. Do not repeat the protected test rows.`);
   return value.cases.map((item,i)=> {
-    if (!Number.isSafeInteger(item.amountCents) || item.amountCents < 0 || item.amountCents > 100000000 || !['submitted','paid'].includes(item.status) || typeof item.receipt!=='boolean') throw Error('QA supplied invalid expense data.');
+    if (!item || !Number.isSafeInteger(item.amountCents) || item.amountCents < 0 || item.amountCents > 100000000 || !['submitted','paid'].includes(item.status) || typeof item.receipt!=='boolean') throw Error(`QA case ${i+1} must contain an integer amountCents from 0 to 100000000, status submitted or paid, and a boolean receipt.`);
     return {name:`QA case ${i+1}`,input:{id:`qa-${i}`,merchant:'Synthetic QA case',amountCents:item.amountCents,status:item.status,receipt:item.receipt}};
   });
 }

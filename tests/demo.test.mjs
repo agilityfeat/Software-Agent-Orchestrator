@@ -53,8 +53,26 @@ test('stale passing evidence without current no-receipt cases cannot be accepted
 test('wrong evidence hash and recorded runs cannot be accepted',async()=>{const c=make();await plan(c);await c.run();c.task.evidence.hash='stale';assert.equal(canAccept(c.task),false);c.task.evidence.hash=c.task.hash;c.task.mode='recorded';assert.equal(canAccept(c.task),false);});
 test('persistent failures stop after two repairs',async()=>{const c=make({execute:async(_,inputs)=>inputs.map(()=>({status:'paid',reason:'Wrong',canApprove:false}))});await plan(c);await assert.rejects(()=>c.run(),/Two repair/);assert.equal(c.task.attempt,3);assert.equal(c.task.versions.length,3);assert.equal(c.task.status,'Blocked');assert.equal(canAccept(c.task),false);});
 test('candidate syntax errors are evidence and get bounded repairs',async()=>{const c=make({execute:async()=>{throw Error('Syntax failure');}});await plan(c);await assert.rejects(()=>c.run(),/Two repair/);assert.ok(c.task.evidence.rows.every(r=>!r.pass));});
-test('live roles use the shared model sequentially, not fixture agents',async()=>{const roles=[];const model={cancel(){},async generate(role){roles.push(role);return role==='Planner'?JSON.stringify({summary:'Live test adapter',steps:['Implement']}):role==='Coder'?fixtureSource(rule):JSON.stringify({summary:'Checks reviewed',cases:[{amountCents:2,status:'submitted',receipt:true}]});}};const c=make({model});await c.plan({request:'Test',rule,mode:'live'});await c.run();assert.deepEqual(roles,['Planner','Coder','Tester']);assert.equal(c.task.evidence.rows.length,10);assert.equal(c.task.attempt,1);});
-test('invalid QA output blocks rather than inventing a verdict',async()=>{const c=make({model:{cancel(){},async generate(role){return role==='Planner'?'{"summary":"x","steps":["x"]}':role==='Coder'?fixtureSource(rule):'{"summary":"all pass"}';}}});await c.plan({request:'Test',rule,mode:'live'});await assert.rejects(()=>c.run(),/QA must/);assert.equal(c.task.status,'Blocked');assert.equal(canAccept(c.task),false);});
+test('live roles use the shared model sequentially, not fixture agents',async()=>{const roles=[];const model={cancel(){},async generate(role,prompt){roles.push(role);if(role==='Tester'){assert.match(prompt,/ALREADY EXECUTED the following 9 protected test cases/);assert.match(prompt,/Never copy the protected rows into cases/);assert.match(prompt,/"cases":\[\]/);}return role==='Planner'?JSON.stringify({summary:'Live test adapter',steps:['Implement']}):role==='Coder'?fixtureSource(rule):JSON.stringify({summary:'Checks reviewed',cases:[{amountCents:2,status:'submitted',receipt:true}]});}};const c=make({model});await c.plan({request:'Test',rule,mode:'live'});await c.run();assert.deepEqual(roles,['Planner','Coder','Tester']);assert.equal(c.task.evidence.rows.length,10);assert.equal(c.task.attempt,1);});
+test('invalid QA output blocks rather than inventing a verdict',async()=>{const c=make({model:{cancel(){},async generate(role){return role==='Planner'?'{"summary":"x","steps":["x"]}':role==='Coder'?fixtureSource(rule):'{"summary":"all pass"}';}}});await c.plan({request:'Test',rule,mode:'live'});await assert.rejects(()=>c.run(),/QA cases must/);assert.equal(c.task.status,'Blocked');assert.equal(canAccept(c.task),false);});
+test('QA validation identifies each schema failure without returning model text',()=>{
+  assert.throws(()=>extraCases(null),/QA summary must be a string/);
+  assert.throws(()=>extraCases({summary:{untrusted:'content'},cases:[]}),/QA summary must be a string/);
+  assert.throws(()=>extraCases({summary:'Review',cases:{}}),/QA cases must be an array/);
+  assert.throws(()=>extraCases({summary:'Review',cases:Array(9).fill({})}),/QA returned 9 additional cases; the maximum is 6/);
+  assert.throws(()=>extraCases({summary:'Review',cases:[null]}),/QA case 1 must contain/);
+  const input={amountCents:1,status:'submitted',receipt:false};
+  assert.equal(extraCases({summary:'Review',cases:Array(6).fill(input)}).length,6);
+});
+test('QA repeating the nine protected rows blocks instead of truncating or inventing a pass',async()=>{
+  const c=make({model:{cancel(){},async generate(role){
+    return role==='Planner'?JSON.stringify({summary:'Synthetic regression',steps:['Implement']}):
+      role==='Coder'?fixtureSource(rule):JSON.stringify({summary:'Protected results repeated',cases:requiredCases(rule).map(test=>test.input)});
+  }}});
+  await c.plan({request:'Test',rule,mode:'live'});
+  await assert.rejects(()=>c.run(),/QA returned 9 additional cases; the maximum is 6/);
+  assert.equal(c.task.status,'Blocked');assert.equal(c.task.evidence,null);assert.equal(canAccept(c.task),false);
+});
 test('cancellation fences late planner completion',async()=>{let release;const c=make({model:{cancel(){},generate(){return new Promise(resolve=>{release=resolve;});}}});const promise=c.plan({request:'x',rule,mode:'live'});c.cancel();release('{"summary":"late","steps":["x"]}');await assert.rejects(()=>promise,/cancelled/);assert.equal(c.task.status,'Blocked');assert.equal(c.task.plan,null);});
 test('duplicate starts are rejected',async()=>{const c=make();await plan(c);const pending=c.run();await assert.rejects(()=>c.run(),/Approve/);await pending;});
 test('SHA-256 binds evidence to source',async()=>{assert.equal((await digest(BASE_SOURCE)).length,64);assert.notEqual(await digest(BASE_SOURCE),await digest(BASE_SOURCE+' '));});
