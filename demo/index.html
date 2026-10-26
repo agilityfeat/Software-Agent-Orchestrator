@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <meta name="description" content="A local-first software agent workbench paired with a live expense application. One model, three roles, real tests.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://esm.sh https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob:; frame-src 'self'; connect-src 'self' https://esm.sh https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>Agents at Work · Software Agent Orchestrator</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./styles.css"><script type="module" src="./app.mjs"></script>
@@ -17,8 +17,8 @@
 <main>
   <section class="runtime-bar" aria-label="Execution controls">
     <label class="mode-label">Execution <select id="mode"><option value="guided">Guided example</option><option value="live">Live · local Gemma</option><option value="recorded">Recorded · last live run</option></select></label>
-    <div class="runtime-copy"><strong id="model-status" role="status">Local model not loaded</strong><small id="mode-note">Scripted agents, real executed tests. No model download required.</small></div>
-    <button id="load-model" class="primary">Load Gemma · ~2 GB</button><label class="file-label" title="Use an already downloaded Gemma E2B web model">Local file<input type="file" id="model-file" accept=".litertlm"></label>
+    <div class="runtime-copy"><strong id="model-status" role="status">Local model not loaded</strong><small id="mode-note">Scripted date-column example, real browser checks. No model download.</small></div>
+    <button id="load-model" class="primary">Load Gemma · ~3 GB</button><label class="file-label" title="Use an already downloaded Gemma 4 E4B web model">Local file<input type="file" id="model-file" accept=".litertlm"></label>
   </section>
   <div id="notice" class="notice" role="status" hidden></div>
   <div id="workspace" class="workspace">
@@ -26,8 +26,8 @@
       <div class="panel-heading"><div><span class="overline">01 / THE TEAM</span><h2>Builder workboard</h2></div><span class="tag" id="task-mode">GUIDED</span></div>
       <form id="request-form">
         <label for="request">What should the team improve?</label>
-        <textarea id="request" rows="3" maxlength="1000" required>Make view receipt match the rest of the look and feel.</textarea>
-        <div class="request-footer"><small>Review the plan before anything changes.</small><button id="plan" type="submit" class="primary">Create plan <span>↗</span></button></div>
+        <textarea id="request" rows="3" maxlength="1000" required>Let's add a date in table.</textarea>
+        <div class="request-footer"><small>Review the plan before anything changes.</small><button id="plan" disabled type="submit" class="primary">Create plan <span>↗</span></button></div>
       </form>
       <div class="board" id="board" aria-label="Task lifecycle"></div>
       <div class="agent-strip" id="agents"></div>
@@ -35,24 +35,18 @@
         <div class="tabs" role="tablist" aria-label="Task details"><button data-tab="plan" class="selected" role="tab" aria-selected="true">Plan</button><button data-tab="code" role="tab" aria-selected="false">Code</button><button data-tab="tests" role="tab" aria-selected="false">Tests <span id="test-count">—</span></button><button data-tab="activity" role="tab" aria-selected="false">Activity</button></div>
         <div id="artifact-body" class="artifact-body" role="tabpanel"></div>
       </section>
-      <div class="builder-footer"><button id="export" class="quiet" disabled>Export run</button><div><button id="cancel" class="quiet" hidden>Stop</button><button id="run" class="primary" disabled>Approve plan & run</button><button id="accept" class="success" hidden>Accept change</button></div></div>
-      <p class="boundary-note">Local demo only. No repository writes, real expenses, or payments.</p>
+      <div class="builder-footer"><div><button id="export" class="quiet">Export workspace</button><button id="export-legacy" class="quiet" hidden>Export previous workspace</button></div><div><button id="cancel" class="quiet" hidden>Stop</button><button id="run" class="primary" disabled>Approve plan & run</button><button id="accept" class="success" hidden>Accept change</button></div></div>
+      <p class="boundary-note">Full HTML, CSS and JavaScript. Local preview only; no repository writes or real payments.</p>
     </section>
     <div id="divider" role="separator" aria-label="Resize builder and application" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="70" aria-valuenow="48" tabindex="0"><span></span></div>
-    <section class="fintech panel" aria-label="Live expense application">
-      <div class="app-toolbar"><span><span class="app-logo">v</span> V135 <b>Spend</b></span><div class="preview-toggle" role="group" aria-label="Application version"><button id="show-accepted" class="selected" aria-pressed="true">Accepted</button><button id="show-candidate" aria-pressed="false" disabled>Candidate</button></div></div>
-      <div class="app-nav"><span class="nav-active">Expenses</span><span>Company workspace</span><span class="avatar">JD</span></div>
-      <div class="app-content"><div class="expense-heading"><div><p class="overline">SPEND MANAGEMENT</p><h2>Your expense inbox</h2><p>Know what needs a closer look.</p></div><span class="month">October 2026</span></div>
-        <div class="stats"><div><span>Submitted</span><strong id="submitted-total">—</strong><small>Across your team</small></div><div><span>Needs attention</span><strong id="needs-count">0</strong><small id="needs-note">Policy checks</small></div><div><span>Already paid</span><strong id="paid-total">—</strong><small>History preserved</small></div></div>
-        <div class="expense-filters"><label class="search-box"><span>⌕</span><input id="search" type="search" placeholder="Search merchant or employee" aria-label="Search expenses"></label><select id="filter" aria-label="Filter expenses"><option value="all">All expenses</option><option value="attention">Needs attention</option><option value="eligible">Eligible</option><option value="paid">Paid</option></select></div>
-        <div class="table-wrap"><table><thead><tr><th>Merchant / employee</th><th>Amount</th><th>Status</th></tr></thead><tbody id="expenses"></tbody></table></div>
-        <div id="expense-detail" class="expense-detail"></div>
-        <div class="app-status"><span id="preview-status">Accepted baseline</span><span>Synthetic data · USD</span></div>
-      </div>
+    <section class="fintech panel page-workspace" aria-label="Application preview">
+      <div class="app-toolbar"><span>App preview</span><div class="preview-toggle" role="group" aria-label="Application version"><button id="show-accepted" class="selected" aria-pressed="true">Accepted</button><button id="show-candidate" aria-pressed="false" disabled>Candidate</button></div></div>
+      <div id="app-preview" class="page-preview"></div>
+      <p id="preview-status" class="preview-state" role="status">Accepted app · local only</p>
     </section>
   </div>
-  <footer class="page-footer"><span>Same model. Separate role contexts. Deterministic verification.</span><a href="./how-it-works/">How this demo works</a></footer>
+  <footer class="page-footer"><span>Plan, edit and check the complete app in your browser.</span><a href="./how-it-works/">How this demo works</a></footer>
 </main>
-<dialog id="receipt-dialog"><h2>Example receipt</h2><p id="receipt-copy"></p><p>This is synthetic workshop data, not a financial record.</p><form method="dialog"><button class="primary">Close</button></form></dialog>
+
 </body>
 </html>

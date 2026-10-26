@@ -30,7 +30,7 @@ export function loaderPresentation(event = {}) {
     phase, title: titles[phase] || titles.idle, detail, percent,
     loading: LOADING.has(phase),
     badge: phase === 'ready' ? '✓ READY' : phase === 'working' ? 'WORKING' : phase === 'error' ? 'NEEDS ATTENTION' : phase === 'stopped' ? 'STOPPED' : phase === 'idle' ? 'ASLEEP' : 'WAKING UP',
-    button: LOADING.has(phase) ? 'Waking Gemma…' : ['ready', 'working'].includes(phase) ? '✓ Gemma loaded' : ['error', 'stopped'].includes(phase) ? 'Retry loading Gemma' : 'Load Gemma · ~2 GB',
+    button: LOADING.has(phase) ? 'Waking Gemma…' : ['ready', 'working'].includes(phase) ? '✓ Gemma loaded' : ['error', 'stopped'].includes(phase) ? 'Retry loading Gemma' : 'Load Gemma · ~3 GB',
   };
 }
 
