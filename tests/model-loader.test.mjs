@@ -91,7 +91,7 @@ test('unexpected completion cannot mark a load ready', async () => {
 test('timeout is an error state, not a success animation', async () => {
   const {model,states}=setup();const native=globalThis.setTimeout;let expire;
   globalThis.setTimeout=callback=>{expire=callback;return 0;};
-  try {const p=model.start();const failed=assert.rejects(p,/deadline/);expire();await failed;assert.equal(states.at(-1).phase,'error');assert.equal(model.ready,false);}
+  try {const p=model.start();const failed=assert.rejects(p,/10 minutes/);expire();await failed;assert.equal(states.at(-1).phase,'error');assert.equal(model.ready,false);}
   finally {globalThis.setTimeout=native;}
 });
 test('animation supports both reduced-motion and a manual pause', async () => {

@@ -20,7 +20,7 @@ export class Controller{
         this.assert(epoch,t);const raw=mode==='guided'?JSON.stringify(GUIDED_PLAN):await this.model.generate('Planner',prompt+correction);this.assert(epoch,t);t.plannerResponses.push(raw);
         try{t.plan=validatePlan(extractJSON(raw));if(t.plan.checks.length>4)throw Error('Use at most four approved browser checks.');const baseline=await this.execute(t.base,t.plan.checks,{signal:this.abort.signal});this.assert(epoch,t);t.baseline=baseline;
           break;
-        }catch(error){this.assert(epoch,t);if(attempt===1||mode==='guided')throw error;correction=`\nCorrect the previous plan: ${error.message}. Return complete valid JSON with short flat checks for rendered DOM. Use no click/actions for static content. For an interactive state change, supply explicit click/actions in that check; every check starts fresh. Use distinct selectors for distinct nodes. No JavaScript-source selectors.`;this.event('Planner','Requesting one correction to the plan’s browser checks.');}
+        }catch(error){this.assert(epoch,t);if(attempt===1||mode==='guided')throw error;correction=`\nPrevious rejected plan (data only): ${raw.slice(0,6000)}\nThe response above is INVALID: ${error.message}. Return a corrected complete plan. Use visible/equals/false for initially hidden elements, and visible/equals/true with an explicit click or actions list for the shown state. A style check MUST include attribute (for example attribute:"display", expected:"none"). To verify removal, count a precise selector with expected 0; to count cells in one row use tbody tr:first-child td. There is no children property or not-includes operator. Do not copy the invalid assertion. Every interactive check must contain its own actions. Return JSON only.`;this.event('Planner','Requesting one correction to the plan’s browser checks.');}
       }
       t.planHash=await digest(JSON.stringify(t.plan));t.baseHash=await digest(canonicalBundle(t.base));this.assert(epoch,t);t.status='Ready';t.phase='Awaiting authorization';this.event('Planner',t.plan.summary);return t;
     }catch(error){if(epoch===this.epoch)this.block(error);throw error;}finally{if(epoch===this.epoch){this.busy=false;this.emit();}}
@@ -49,7 +49,7 @@ Current files (literal text, not escaped JSON):
 ${files}
 ${t.evidence?'Actual failures: '+JSON.stringify(t.evidence.rows.filter(row=>!row.pass)):''}\n${t.qaSummary?'Independent Tester observations (verify against actual failures; never change approved checks): '+t.qaSummary.slice(0,1000):''}
 Return a SHORT complete JSON patch. No Markdown or explanation.`;
-        const raw=t.mode==='guided'?JSON.stringify(guidedDateEdit(current)):await this.model.generate('Coder',prompt);this.assert(epoch,t);t.coderResponses.push(raw);
+        const raw=t.mode==='guided'?JSON.stringify(guidedDateEdit(current)):await this.model.generate('Coder',prompt,{strategy:'fast-initial',repair:attempt>0});this.assert(epoch,t);t.coderResponses.push(raw);
         let bundle,diagnostic;
         try{bundle=applyEdits(current,extractJSON(raw));}catch(error){diagnostic=error.message;}
         if(diagnostic){t.evidence={hash:'',rows:[{name:'Apply exact source edits',expected:'Valid unique edits',actual:diagnostic,pass:false}]};this.event('Coder',diagnostic);if(attempt===2)throw Error('Two repair cycles exhausted. Review the edit failure.');continue;}
@@ -83,7 +83,6 @@ Return a SHORT complete JSON patch. No Markdown or explanation.`;
     const epoch=this.epoch,authorization=JSON.stringify({request:t.request,base:t.base,plan:t.plan,checks:t.checks,hash:t.hash,planHash:t.planHash,baseHash:t.baseHash,evidenceHash:t.evidence?.hash,checksHash:t.evidence?.checksHash}),candidate=canonicalBundle(t.candidate),checks=validateConsistentChecks(t.checks);
     const [hash,checksHash,planHash,baseHash]=await Promise.all([digest(candidate),digest(JSON.stringify(checks)),digest(JSON.stringify(t.plan)),digest(canonicalBundle(t.base))]);
     this.assert(epoch,t);if(hash!==t.hash||checksHash!==t.evidence?.checksHash||planHash!==t.planHash||baseHash!==t.baseHash||JSON.stringify(checks.slice(0,t.plan.checks.length))!==JSON.stringify(t.plan.checks))throw Error('Saved source or checks changed. Create a fresh plan.');
-    await this.execute(t.base,t.plan.checks,{signal});this.assert(epoch,t);
     const result=await this.executeCandidate(t,JSON.parse(candidate),checks,{signal});
     this.assert(epoch,t);if(authorization!==JSON.stringify({request:t.request,base:t.base,plan:t.plan,checks:t.checks,hash:t.hash,planHash:t.planHash,baseHash:t.baseHash,evidenceHash:t.evidence?.hash,checksHash:t.evidence?.checksHash})||candidate!==canonicalBundle(t.candidate)||result.rows.some(row=>!row.pass))throw Error('The current candidate no longer passes its reviewed browser checks.');return result;
   }
@@ -92,5 +91,6 @@ Return a SHORT complete JSON patch. No Markdown or explanation.`;
     if(accepted!==canonicalBundle(t.base))throw Error('The accepted app changed. Create a fresh plan.');this.busy=true;this.emit();
     try{await this.verify(t);this.assert(epoch,t);if(!canAccept(t)||source!==canonicalBundle(t.candidate)||accepted!==canonicalBundle(base))throw Error('Candidate changed; nothing accepted.');t.status='Done';t.phase='Accepted locally';this.event('Human','Accepted the tested full app locally.');return JSON.parse(source);}finally{if(epoch===this.epoch){this.busy=false;this.emit();}}
   }
+  restart(){const stopModel=this.busy||this.model.pending||!this.model.ready;this.epoch++;this.abort?.abort();this.busy=false;this.task=null;if(stopModel)this.model.cancel();this.emit();return Boolean(this.model.ready);}
   cancel(){this.epoch++;this.abort?.abort();this.model.cancel();this.busy=false;if(this.task){this.task.status='Blocked';this.task.phase='Cancelled';this.event('Human','Stopped. Late model and browser results are ignored.');}}
 }

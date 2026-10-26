@@ -11,8 +11,12 @@ export class LocalModel {
     this.ready = false;
     this.statusText = '';
     this.identity = structuredClone(MODEL_IDENTITY);
+    this.metrics = [];
+    this.lastMetrics = null;
+    this.activity = null;
   }
   notify(phase, text, details = {}) {
+    this.activity = phase === 'working' ? structuredClone({...details, phase, text}) : null;
     this.onState({...details, phase, text});
     // Do not announce every byte update to the existing live region.
     if (text !== this.statusText) {this.statusText = text; this.onStatus(text);}
@@ -22,9 +26,9 @@ export class LocalModel {
     this.identity = file ? {name:'Local Gemma model',artifact:null} : structuredClone(MODEL_IDENTITY);
     return this.call('load', {file}, 600000);
   }
-  generate(role, prompt) {
+  generate(role, prompt, options = {}) {
     if (!this.ready) throw Error('Load the local model first.');
-    return this.call('generate', {role, prompt}, 180000);
+    return this.call('generate', {role, prompt, options}, 180000);
   }
   async call(type, payload, timeout) {
     if (this.pending) throw Error('The shared model is already busy.');
@@ -45,6 +49,11 @@ export class LocalModel {
           if (allowed.includes(data.phase)) this.notify(data.phase, data.text, data);
           return;
         }
+        if (this.pending.type === 'generate' && data.metrics && typeof data.metrics === 'object') {
+          this.lastMetrics = structuredClone(data.metrics);
+          this.metrics.push(this.lastMetrics);
+          this.metrics = this.metrics.slice(-50);
+        }
         if (data.error) {this.cancel(String(data.error), 'error'); return;}
         const expected = this.pending.type === 'load' ? 'loaded' : 'generated';
         if (data.type !== expected) {this.cancel('Unexpected local runtime response. Reload and retry.', 'error'); return;}
@@ -56,17 +65,18 @@ export class LocalModel {
         pending.resolve(data.text);
       };
       worker.onerror = () => {
-        if (this.worker === worker) this.cancel('Local runtime failed to load. Check WebGPU and network access.', 'error');
+        if (this.worker === worker) this.cancel('Gemma runtime failed. Load Gemma again, then choose Start over.', 'error');
       };
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.cancel('Local model exceeded its deadline. Reload from cache and retry.', 'error'), timeout);
+      const deadlineMessage = type === 'load' ? 'Gemma did not finish loading in 10 minutes. Retry loading; its downloaded files are kept.' : 'Gemma did not finish this step in 3 minutes. Load Gemma again, then choose Start over. Its download is kept.';
+      const timer = setTimeout(() => this.cancel(deadlineMessage, 'error'), timeout);
       this.pending = {type, resolve, reject, timer};
       try {this.worker.postMessage({type, ...payload});}
       catch (error) {this.cancel(String(error.message || error), 'error');}
     });
   }
-  cancel(message = 'Local model stopped. Reload to continue.', phase = 'stopped') {
+  cancel(message = 'Gemma stopped. Load Gemma again to continue; its download is kept.', phase = 'stopped') {
     this.worker?.terminate();
     this.worker = null;
     this.ready = false;
