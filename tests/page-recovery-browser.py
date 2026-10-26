@@ -23,14 +23,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Handler, directory=str(ROOT)))
 threading.Thread(target=server.serve_forever, daemon=True).start()
 model_fixture = '''export class LocalModel{
- constructor(onStatus){this.onStatus=onStatus;this.ready=false;this.pending=null;this.epoch=0;this.identity={name:'Synthetic recovery fixture'};}
- async start(){const epoch=this.epoch;this.pending={type:'load'};if(window.__holdLoad)await new Promise(resolve=>window.__releaseLoad=resolve);if(epoch===this.epoch){this.pending=null;this.ready=true;this.onStatus('Synthetic model ready — NON_ACCEPTANCE for Gemma');}}
- cancel(){this.epoch++;this.pending=null;this.ready=false;this.onStatus('Synthetic model stopped');}
- async generate(role){const epoch=this.epoch;this.pending={type:'generate'};window.__calls??=[];window.__calls.push(role);try{
+ constructor(onStatus,_presenter,onActivity=()=>{}){this.onActivity=onActivity;this.onStatus=onStatus;this.ready=false;this.pending=null;this.epoch=0;this.identity={name:'Synthetic recovery fixture'};}
+ async start(){const epoch=this.epoch;this.pending={type:'load'};this.onActivity({type:'start',operation:'load',role:'Model'});if(window.__holdLoad)await new Promise(resolve=>window.__releaseLoad=resolve);if(epoch===this.epoch){this.pending=null;this.ready=true;this.onActivity({type:'complete',operation:'load',output:''});this.onStatus('Synthetic model ready — NON_ACCEPTANCE for Gemma');}}
+ cancel(){this.epoch++;this.pending=null;this.ready=false;this.onActivity({type:'stopped',message:'Synthetic model stopped'});this.onStatus('Synthetic model stopped');}
+ async generate(role){const epoch=this.epoch;this.pending={type:'generate'};this.onActivity({type:'start',operation:'generate',role,inputChars:50});window.__calls??=[];window.__calls.push(role);const response=value=>{if(epoch===this.epoch)this.onActivity({type:'complete',operation:'generate',output:value});return value;};try{
   if(window.__holdRole===role)await new Promise((resolve,reject)=>{window.__held??=[];window.__held.push({role,resolve,reject});});
-  if(role==='Planner')return JSON.stringify({summary:'Add a marker to the app.',steps:['Build the requested marker'],checks:[{name:'Marker appears',assertions:[{selector:'#marker',property:window.__badPlan?'unknown':'text',operator:'equals',expected:'Ready'}]}]});
-  if(role==='Coder')return JSON.stringify({files:{html:'<main><h1>Accepted recovery app</h1><p id="marker">Ready</p></main>',css:'main{font-family:system-ui;padding:24px}',js:'localStorage.setItem("accepted","saved");'}});
-  return JSON.stringify({summary:'Actual browser checks verify the marker.',cases:[]});
+  if(role==='Planner')return response(JSON.stringify({summary:'Add a marker to the app.',steps:['Build the requested marker'],checks:[{name:'Marker appears',assertions:[{selector:'#marker',property:window.__badPlan?'unknown':'text',operator:'equals',expected:'Ready'}]}]}));
+  if(role==='Coder')return response(JSON.stringify({files:{html:'<main><h1>Accepted recovery app</h1><p id="marker">Ready</p></main>',css:'main{font-family:system-ui;padding:24px}',js:'localStorage.setItem("accepted","saved");'}}));
+  return response(JSON.stringify({summary:'Actual browser checks verify the marker.',cases:[]}));
  }finally{if(epoch===this.epoch)this.pending=null;}}
 }'''
 report = {'label':'NON_ACCEPTANCE for Gemma; actual app/controller/storage/iframe recovery', 'passed':False}
@@ -75,6 +75,11 @@ try:
         page.locator('#accept').click();page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Accepted locally'")
         page.wait_for_function("async()=>{const{load}=await import('./storage.mjs');const s=await load();return s?.task?.status==='Done'&&s.acceptedStorage.accepted==='saved'}")
         baseline=stored()
+        page.locator('#show-run-log').click()
+        assert page.locator('#run-log-dialog').is_visible()
+        assert 'browser check' in page.locator('.run-log-list').inner_text().lower()
+        assert 'Accepted the tested full app locally' in page.locator('.run-log-list').inner_text()
+        page.locator('#run-log-dialog').get_by_role('button',name='Close',exact=True).click()
         def unchanged():
             value=stored()
             assert value['accepted']==baseline['accepted'] and value['acceptedStorage']==baseline['acceptedStorage'], value
@@ -89,6 +94,11 @@ try:
         page.evaluate("window.__holdRole=null;window.__held[0].reject(Error('OLD PLANNER FAILURE'))")
         page.wait_for_timeout(80)
         assert 'OLD PLANNER' not in page.locator('#notice').inner_text()
+        page.locator('#show-run-log').click()
+        assert page.locator('#run-log-dialog').get_attribute('data-busy')=='false'
+        assert page.locator('.run-log-status strong').inner_text()=='No active task'
+        assert page.locator('.run-log-row').count()==0
+        page.locator('#run-log-dialog').get_by_role('button',name='Close',exact=True).click()
         # Pending Build can restart, load again, plan anew and ignore late model/preview callbacks.
         page.locator('#load-model').click();ready();page.evaluate("window.__holdRole='Coder'");plan('Build a request that will be restarted.')
         page.locator('#run').click();page.wait_for_function("()=>window.__held?.length===2")
@@ -101,6 +111,11 @@ try:
         page.wait_for_timeout(100)
         assert stored()['task']['id']==fresh_id and stored()['task']['status']=='Ready'
         assert 'OLD' not in page.locator('#notice').inner_text()
+        page.locator('#show-run-log').click()
+        assert page.locator('#run-log-dialog').get_attribute('data-busy')=='false'
+        assert 'OLD' not in page.locator('.run-log-list').inner_text()
+        assert 'Add a marker to the app.' in page.locator('.run-log-list').inner_text()
+        page.locator('#run-log-dialog').get_by_role('button',name='Close',exact=True).click()
         # Planner format failures expose the real reason; idle loaded model remains ready after recovery.
         start_over();page.evaluate('window.__badPlan=true');page.locator('#request').fill('A request with a deliberately invalid model plan.');page.locator('#plan').click()
         page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Needs attention'")
@@ -140,7 +155,7 @@ try:
         page.evaluate('window.__held[0].reject(Error("OLD RESET BUILD"))');page.wait_for_timeout(80)
         assert 'OLD RESET' not in page.locator('#notice').inner_text() and page.locator('#request').is_enabled()
         assert not errors, errors
-        report.update(passed=True,baseline_history=len(baseline['history']),accepted_preserved=True,scenarios=['active Planner restart + late rejection','active Build restart + late model/preview/window messages','new valid plan after restart','blocked actual plan error + idle model preservation','leave Recorded while verification is pending','reload interrupted Build','restart during saved workspace verification','model loading restart + late completion','active Reset demo + late Build rejection'],pageerrors=errors)
+        report.update(passed=True,baseline_history=len(baseline['history']),accepted_preserved=True,scenarios=['active Planner restart + late rejection','active Build restart + late model/preview/window messages','new valid plan after restart','blocked actual plan error + idle model preservation','leave Recorded while verification is pending','reload interrupted Build','restart during saved workspace verification','model loading restart + late completion','active Reset demo + late Build rejection','RunLog modal completion + restart reset + old-callback fences'],pageerrors=errors)
         if args.output:
             args.output.parent.mkdir(parents=True,exist_ok=True)
             args.output.write_text(json.dumps(report,indent=2)+'\n')

@@ -199,3 +199,22 @@ test('heartbeats distinguish no first response from a stalled stream without inv
   finishRead({done:true});const result=await pending;assert.equal(result.metrics.outcome,'completed');assert.equal(result.metrics.receivedChunks,1);
  },{self:{postMessage:value=>messages.push(value)},performance:{now:()=>clock},setInterval(callback){heartbeat=callback;return 1},clearInterval(){}});
 });
+
+test('merged lifecycle logs coexist with progress state, source events and metric completion',async()=>{
+ await withWorker(async(model,workers)=>{
+  const events=[];model.onActivity=event=>events.push(structuredClone(event));
+  const loading=model.start();workers[0].emit({type:'status',phase:'cached',text:'Found cached model',source:'cache'});assert.equal(events.at(-1).source,'cache');assert.equal(model.activity,null);workers[0].emit({type:'loaded'});await loading;
+  const pending=model.generate('Coder','Synthetic input',{strategy:'fast-initial'});workers[0].emit({type:'status',phase:'working',text:'Building',role:'Coder',elapsedMs:1000,receivedChunks:2,outputChars:10});
+  const progress=model.activity;assert.equal(progress.receivedChunks,2);assert.equal(typeof model.emitActivity,'function');
+  workers[0].emit({type:'diagnostic',role:'Coder',stage:'validation',text:'Coder: response received; validating output format…'});assert.equal(events.at(-1).stage,'validation');assert.equal(model.activity,progress);assert.equal(model.pending.type,'generate');assert.equal(model.lastMetrics,null);
+  const output='{"edits":[{"file":"html","find":"before","replace":"after"}]}';workers[0].emit({type:'generated',text:output,metrics:{role:'Coder',wallMs:1200,outcome:'completed'}});assert.equal(await pending,output);assert.equal(events.at(-1).type,'complete');assert.equal(events.at(-1).output,output);assert.equal(model.activity,null);assert.equal(model.lastMetrics.wallMs,1200);assert.equal(model.ready,true);
+ });
+});
+test('cancelled workers cannot append late diagnostic milestones to a replacement operation',async()=>{
+ await withWorker(async(model,workers)=>{
+  const events=[];model.onActivity=event=>events.push(event);const loading=model.start();workers[0].emit({type:'loaded'});await loading;
+  const old=workers[0],pending=model.generate('Planner','Synthetic');const rejected=assert.rejects(pending,/stopped/);model.cancel();await rejected;const count=events.length;
+  old.emit({type:'diagnostic',role:'Planner',stage:'validation',text:'late milestone'});old.emit({type:'generated',text:'late output'});assert.equal(events.length,count);assert.equal(model.activity,null);assert.equal(model.ready,false);
+  const retry=model.start();workers[1].emit({type:'loaded'});await retry;assert.equal(model.ready,true);
+ });
+});

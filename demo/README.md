@@ -34,6 +34,10 @@ promoting the exact bundle. It saves only in this browser. Export workspace
 retains the accepted files, model responses, checks and run history, plus bounded
 local timing and activity counters.
 
+**Logs** opens the detailed live activity view without stopping agents. It shows
+role handoffs, real model activity, completed responses and browser checks. See
+[LOGS.md](./LOGS.md) for its bounded, in-memory diagnostic behavior.
+
 **Start over** cancels the current plan/build/checks and lets you enter a new
 request, preserving the accepted app, successful runs and downloaded model. An
 idle loaded model stays ready; stopping active inference releases its worker, so
