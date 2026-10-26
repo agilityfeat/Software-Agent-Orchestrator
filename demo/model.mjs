@@ -3,17 +3,20 @@ export const MODEL_IDENTITY=Object.freeze({name:'Gemma 4 E4B',artifact:'https://
 
 export class LocalModel {
   // The optional presenter keeps structured state testable without a browser or GPU.
-  constructor(onStatus = () => {}, onState = mountModelLoader()) {
+  constructor(onStatus = () => {}, onState = mountModelLoader(), onActivity = () => {}) {
     this.onStatus = onStatus;
     this.onState = onState;
+    this.onActivity = onActivity;
     this.worker = null;
     this.pending = null;
     this.ready = false;
     this.statusText = '';
     this.identity = structuredClone(MODEL_IDENTITY);
   }
+  activity(event) { try { this.onActivity(event); } catch { /* Diagnostics must not interrupt inference. */ } }
   notify(phase, text, details = {}) {
     this.onState({...details, phase, text});
+    if (this.pending) this.activity({type:'status', text, phase});
     // Do not announce every byte update to the existing live region.
     if (text !== this.statusText) {this.statusText = text; this.onStatus(text);}
   }
@@ -34,7 +37,7 @@ export class LocalModel {
       // LiteRT-LM loads its WASM glue with importScripts(), which requires a classic worker.
       // model-worker.mjs uses dynamic import() for the SDK; keep that entrypoint classic-compatible.
       try {worker = new Worker(new URL('./model-worker.mjs', import.meta.url), {type: 'classic'});}
-      catch (error) {this.notify('error', String(error.message || error)); throw error;}
+      catch (error) {this.activity({type:'error',message:String(error.message || error)});this.notify('error', String(error.message || error)); throw error;}
       this.worker = worker;
       worker.onmessage = ({data}) => {
         // A terminated worker may already have queued a message. Never revive a cancelled load.
@@ -51,6 +54,7 @@ export class LocalModel {
         const pending = this.pending;
         this.pending = null;
         clearTimeout(pending.timer);
+        this.activity({type:'complete',operation:pending.type,output:data.text});
         if (data.type === 'loaded') this.ready = true;
         this.notify('ready', `${this.identity.name} · ready`);
         pending.resolve(data.text);
@@ -62,6 +66,7 @@ export class LocalModel {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.cancel('Local model exceeded its deadline. Reload from cache and retry.', 'error'), timeout);
       this.pending = {type, resolve, reject, timer};
+      this.activity({type:'start',operation:type,role:payload.role||'Model',inputChars:payload.prompt?.length||0});
       try {this.worker.postMessage({type, ...payload});}
       catch (error) {this.cancel(String(error.message || error), 'error');}
     });
@@ -71,6 +76,7 @@ export class LocalModel {
     this.worker = null;
     this.ready = false;
     if (this.pending) {clearTimeout(this.pending.timer); this.pending.reject(Error(message)); this.pending = null;}
+    this.activity({type:phase === 'error' ? 'error' : 'stopped',message});
     this.notify(phase, message);
   }
 }
