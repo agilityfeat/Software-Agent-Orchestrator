@@ -1,77 +1,53 @@
 # Software Agent Orchestrator
 
-**Your AI team, from goal to delivery.**
+**Run an AI development team locally, or try the workflow in your browser.**
 
-A lightweight, local-first AI agent workspace. Define a goal, review Main's proposed
-tickets, and let Coder and independent QA take repository work through checks,
-repairs, a pull request and optional merge. The Kanban board shows what is queued,
-active, blocked and delivered.
+This repository has two parts: a **local development application for real projects**
+and a **browser demo that showcases the idea with a small Google Gemma 4 model**.
+They demonstrate the same idea: **plan → code → check → review**.
 
-One Rust application, one SQLite database, an embedded browser UI and your own
-Codex and GitHub accounts. No n8n, Node server, frontend build, private service,
-or Docker image is required for the normal starter path.
+[Try the browser demo](https://agilityfeat.github.io/Software-Agent-Orchestrator/) ·
+[Set up the local application](#local-ai-development) ·
+[Documentation](#documentation)
 
-This is an early **single-user local starter**. macOS is the initial validation
-platform. Windows users run the Linux application inside **WSL2 Ubuntu**; see
-[Windows setup](docs/windows.md). Native Windows executables are not supported.
-The WSL2 path has not been validated on a physical Windows host. This is not a hosted multi-user
-service. Setup is pinned for one year and refuses silent tool/configuration
-replacement; unattended upgrades and renewal are not included in this first release.
+| | Local AI development | Browser demo |
+|---|---|---|
+| **Purpose** | Work on your own software repositories | Explore agent orchestration on a small sample app |
+| **Runs where?** | On your computer, with a local web interface | In your browser, served through GitHub Pages |
+| **AI** | Codex CLI using your account | Google Gemma 4 E4B downloaded to your device |
+| **Output** | Tested code, a GitHub PR and optional merge | An edited HTML/CSS/JavaScript app saved in your browser |
+| **To start** | Install the tools and sign in to your accounts | Open the demo; no account or API key required |
 
-## What is included
+**The demo is a showcase, not the full development application running in a browser.**
+“Local” describes where the development tool runs, not offline Codex inference.
+The demo's Gemma model does run on your device.
 
-- **Main:** turn a goal into editable proposals, with acceptance criteria,
-  priorities, labels and dependencies. Review and accept proposals into Backlog.
-- **Workboard:** compact filters, editable tickets, inline priority and drag
-  Backlog ↔ Ready. Ready engineering tickets enter their repository's queue.
-- **Continuous processing:** one active task per repository, with different
-  repositories processed in parallel. A failed task pauses its own repository.
-- **Coder → QA:** independent review of the exact implementation commit, bounded
-  repair attempts, and separate Backlog bug tickets for unrelated findings.
-- **GitHub delivery:** create a PR and either merge after successful checks or
-  wait for a human merge, according to the ticket's delivery policy.
-- **System:** editable Main, Coder and QA agents, additional role-based agents,
-  instructions, model choices and default assignments.
-- **Operator controls:** pause, stop, reconcile uncertain outcomes, retained
-  activity and remembered local sign-in.
+## Local AI development
 
-Main currently plans from the goal and context you provide; it does not inspect
-repository source. Coder discovers the repository and performs implementation.
-For a **Research** ticket, leave the repository blank to research a question and
-deliver a Markdown report with cited sources and downloadable `report.md` and
-`sources.json`. Ready starts the native research agent; no Git checkout, PR or
-merge is created. Research defaults to Skip QA. If Required QA is selected, a
-fresh independent session reviews the exact report digest and can request up to
-two repairs before completion. Supplying a repository keeps the existing coding
-workflow, including its implementation checks and delivery policy. External
-publishing to document systems is not included.
+**Main** proposes tasks from your goal and context. **Coder** inspects the
+repository, implements a task and runs checks. A separate **QA** session reviews
+the same code version and can request a limited number of repairs. The result is a
+GitHub PR, with manual or automatic merge according to the task's policy.
 
-## Quick start
+The workboard tracks dependencies, priorities, repository queues and results,
+with pause/stop controls. **Research** tasks without a repository can instead
+deliver a report with sources.
 
-Prerequisites:
+### Install and start
 
-- macOS with Command Line Tools and Git, or WSL2 Ubuntu with the
-  [Linux prerequisites](docs/windows.md).
-- Rust/Cargo **1.85 or newer**, Python **3.11 or newer**, GitHub CLI (`gh`).
-- Codex CLI **0.153.4**, authenticated with your own account. The execution-event
-  and permission-policy contract is version-specific; newer versions need testing.
-- Any language toolchains required by your actual repositories, such as Node,
-  Python or Rust. Node **20+** is needed only for the UI contributor tests.
+The local app is an early, **single-user tool**, initially validated on macOS. Windows uses
+[WSL2 Ubuntu](docs/windows.md), not native Windows; physical Windows validation
+is still pending.
 
-For CLI installation guidance, see [Codex CLI](https://github.com/openai/codex),
-[GitHub CLI](https://cli.github.com/) and [Rust](https://www.rust-lang.org/tools/install).
-If you use npm to install Codex, select this starter's compatible version with
-`npm install -g @openai/codex@0.153.4`. Setup resolves the package's native binary
-without running its JavaScript launcher.
-
-The agent's model must be available to your own Codex account/CLI. Leave the model
-blank in System to use the CLI default.
+You need Git and platform build tools, **Rust/Cargo 1.85+**, **Python 3.11+**,
+**GitHub CLI (`gh`)**, and **Codex CLI 0.153.4**. Keep the compatible Codex version
+and install your project's toolchains. No Docker, Node server or frontend build
+is required for the normal setup.
 
 ```sh
 git clone https://github.com/agonza1/Software-Agent-Orchestrator.git
 cd Software-Agent-Orchestrator
 
-# Authenticate your own accounts. Never paste credentials into this repository.
 gh auth login --hostname github.com
 codex login
 
@@ -80,116 +56,73 @@ codex login
 ./orchestrator start
 ```
 
-Open **<http://127.0.0.1:4311/#work>**. In another terminal, inside this checkout:
+Use your own accounts; setup expects account-based Codex login, not API-key-only
+authentication. Advanced configuration is in the [setup guide](docs/setup.md).
+
+Open **<http://127.0.0.1:4311/#work>**. In a second terminal, from the same checkout:
 
 ```sh
 ./orchestrator key
 ```
 
-This explicit command reveals the generated local operator key in your terminal.
-Paste it into the app once; browser sign-in is remembered. Do not paste that key
-into a ticket, issue, chat, screenshot or Git commit. It is distinct from your
-GitHub and Codex credentials. Stop the foreground server with Ctrl+C.
+Paste the generated operator key into the **local app only**. Never share it in a
+ticket, chat, screenshot or commit. Setup stores private state outside the
+repository and starts with execution **paused**. Stop the server with Ctrl+C.
 
-`init` builds the Rust binaries, creates private state outside the checkout, generates new local keys and
-records the installed executable pins. It does not import this author's database,
-agent settings, workspace catalog, credentials or Git history. The first launch
-is **paused**: configure System, then explicitly resume launches in the app.
+### Run your first task
 
-Choose a different port or dedicated account directory on your **first** init
-when needed (existing settings are deliberately not overwritten):
+1. Review agents in **System**, leave model fields blank for the CLI default,
+   then resume launches.
+2. Create a small task with an `owner/repository` you can push to, an objective
+   and acceptance criteria. Start with **Required QA** and **Wait for manual merge**.
+3. Move **Backlog → Ready**, follow the work and checks, then review the PR.
 
-```sh
-./orchestrator init --port 4312 --codex-home "$HOME/.codex"
-./orchestrator init --help
-```
+Or ask **Main** to propose tasks, accept them into Backlog, then move them to
+Ready. Manual workflow tasks do not start agents.
 
-For a separate instance, supply the same absolute `--state-dir` to **every**
-command (`init`, `doctor`, `start`, `key`). See [setup details](docs/setup.md).
+**Ready authorizes execution.** Automatic merge can change your default branch;
+merging does not authorize deployment. Keep the app local; do not expose it to
+the public internet. Read the [security boundaries](SECURITY.md) before enabling automation.
 
-## Complete a first task
+## Browser demo
 
-1. Open **System** and review Main, Coder and QA instructions. Keep model fields
-   empty initially unless you know your account supports the chosen model.
-2. Resume launches. For coding work, create a small ticket with an exact `owner/repository`, a
-   concrete objective and acceptance criteria. Use a repository your own GitHub
-   account can push to.
-3. Choose **Wait for manual merge** for your first ticket. Required QA is the
-   default for engineering work.
-4. Move the ticket to **Ready**, or drag its card there from Backlog. The app
-   verifies repository access, prepares an isolated workspace and queues the work.
-5. Follow activity and the PR link. Coder runs relevant checks; a separate QA
-   session reviews the exact commit. In-scope failures can return to Coder within
-   the repair limit. A human-merge ticket completes after its merge is observed.
+[**Open the demo**](https://agilityfeat.github.io/Software-Agent-Orchestrator/)
 
-For research, choose **Research**, leave Repository empty, review the QA choice,
-and move it to Ready. The report appears in task detail after completion.
+A familiar expense app sits beside a builder workboard. In **Live** mode,
+Planner, Coder and Tester share one small **Google Gemma 4 E4B** model through
+separate conversations. They really edit HTML/CSS/JavaScript and run browser
+checks; you approve the result.
 
-Alternatively, enter a goal under **Main** (leave Repository blank for
-Research-only proposals), review the proposals and accept the
-ones you want. Accepted proposals start in Backlog; move them to Ready when you
-want execution. A Manual workflow ticket tracks work without starting an agent.
+1. Open the page and click **Load Gemma**. Use a WebGPU-capable desktop browser;
+   the first download is approximately **3 GB**, then cached when storage allows.
+2. Request a small change, such as **“Add a date column to the table.”** Review the
+   plan and choose **Approve plan & run**. Open **Logs** to follow activity.
+3. Compare **Candidate** with **Accepted**, review the checks, then **Accept change**.
 
-**Ready is an execution decision.** Automatic-merge tickets may change the
-repository's default branch after the required checks pass. The app never grants
-deployment permission merely because a ticket merges.
+No installation, backend, account or API key is needed. It does **not** access
+your repositories, create GitHub PRs or deploy changes. Results stay in that
+browser; **Export workspace** saves a copy.
 
-## Credentials and privacy
+**Guided** needs no model download: scripted agents, real browser checks.
+**Recorded** shows a successful Live run saved in that browser. The separate
+**Developer workboard** link is a read-only preview of the local tool's UI.
 
-**No usable credentials are included.** Each installation uses its owner's own
-accounts and newly generated operator/signing keys. Runtime state stays outside
-Git. GitHub credentials go to repository-access/publication operations, not to the
-coding model's inherited environment. Codex authentication is handled through the
-private local auth reference and isolated per-action homes.
+The demo is not a benchmark of the full tool's capabilities or speed. See the
+[demo guide](demo/README.md) for local hosting, requirements and limitations.
 
-The app listens on loopback. Keep it local; shared accounts, public hosting and
-internet exposure need a different access model. Native agents use an OS sandbox,
-not a VM. Read [security boundaries](SECURITY.md) before enabling automation.
+## Documentation
 
-Before publishing changes:
+| Need help with… | Guide |
+|---|---|
+| Accounts, toolchains and private state | [Local setup](docs/setup.md) |
+| Windows installation | [WSL2 setup](docs/windows.md) |
+| Updates, pause/stop and recovery | [Operations](docs/operations.md) |
+| How the local application works | [Architecture](docs/architecture.md) |
+| Running or extending the browser demo | [Demo documentation](demo/README.md) |
+| Contributing, tests and publishing safely | [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) |
 
-```sh
-python3 scripts/check-public.py --history
-```
+## License
 
-The scanner checks candidate files and all local Git refs for common credential
-patterns and private runtime artifacts. It never prints matched secret values.
-A clean scan is supporting evidence; it does not replace whole-diff review.
-
-## Architecture and operation
-
-```mermaid
-flowchart LR
-    Goal[Goal] --> Main[Main: propose tasks]
-    Main --> Review[Human review]
-    Review --> Board[Backlog / Ready]
-    Board --> Queue[Per-repository queue]
-    Queue --> Coder[Coder + checks]
-    Coder --> QA[Independent QA]
-    QA -->|In-scope repair| Coder
-    QA --> Delivery[PR / optional merge]
-    Delivery --> Done[Done]
-```
-
-Repository-backed tickets with skipped QA still require Coder checks before delivery.
-Repository-free Research uses web research → optional report QA → report delivered.
-The Rust coordinator owns revisions, stage transitions and publication evidence;
-a model's claim alone cannot mark a task delivered.
-
-- [Setup and account configuration](docs/setup.md)
-- [Start, update, pause and recover](docs/operations.md)
-- [Architecture and limitations](docs/architecture.md)
-- [Contributing and local tests](CONTRIBUTING.md)
-- [Security](SECURITY.md)
-
-## Reuse and license
-
-You may use this code personally or commercially, modify it, redistribute it,
-and include it in your own projects under the [MIT License](LICENSE). Keep the
-copyright notice and MIT permission notice in copies or substantial portions.
-The software is provided without warranty; see the license for its full terms.
-Your Codex/GitHub accounts and third-party dependencies retain their own terms.
-
-This standalone starter includes generic application source only;
-it does not include a personal operating environment or the broader business
-integration system from which it was extracted.
+[MIT](LICENSE): personal and commercial use, modification and redistribution are
+allowed with the required notices. Provided without warranty. Model, dependency
+and account-provider terms still apply.
