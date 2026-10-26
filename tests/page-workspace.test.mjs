@@ -121,11 +121,26 @@ test('Live task provenance snapshots the loaded identity without relabeling it l
 
 
 test('old or missing check semantics cannot run, verify, accept or become Recorded evidence',async()=>{
- for(const version of [undefined,'first-node-v0','unrecognized-future']){
+ for(const version of [undefined,'first-node-v0','any-node-v1','unrecognized-future']){
   const pending=await prepared();let calls=0;pending.model.generate=async()=>{calls++;throw Error('Old plan must not call a model')};pending.execute=async()=>{calls++;throw Error('Old plan must not execute')};if(version===undefined)delete pending.task.plan.checkSemantics;else pending.task.plan.checkSemantics=version;pending.task.planHash=await digest(JSON.stringify(pending.task.plan));await assert.rejects(()=>pending.run(),/check rules changed/);assert.equal(calls,0);
   const reviewed=await prepared();await reviewed.run();assert.equal(reviewed.task.plan.checkSemantics,CHECK_SEMANTICS);reviewed.task.plan.checkSemantics=version;reviewed.task.planHash=await digest(JSON.stringify(reviewed.task.plan));assert.equal(canAccept(reviewed.task),false);assert.equal(successfulLiveRun(reviewed.task),false);reviewed.execute=async()=>{calls++;throw Error('Old plan must not execute')};await assert.rejects(()=>reviewed.verify(),/check rules changed/);await assert.rejects(()=>reviewed.accept({base:ORIGINAL}));assert.equal(calls,0);
  }
 });
 test('flat model first flag remains typed and cannot conflict with all',()=>{
  const flat={name:'First heading',selector:'h2',property:'text',operator:'equals',expected:'Before',first:true};assert.equal(modelChecks([flat])[0].assertions[0].first,true);for(const bad of [{...flat,first:'true'},{...flat,all:true}])assert.throws(()=>modelChecks([bad]));
+});
+
+
+test('missing-action contradictory state plans never reach approval or browser execution',async()=>{
+ const checks=[false,true].map(expected=>({name:'Independent state '+expected,selector:'#tip-text',property:'visible',operator:'equals',expected}));
+ for(const same of [checks,[{name:'Same scenario',steps:[],assertions:checks.map(({name,...assertion})=>assertion)}]])assert.throws(()=>modelChecks(same),/contradict/);
+ let modelCalls=0,browserCalls=0;const c=new Controller({model:{cancel(){},async generate(){modelCalls++;return JSON.stringify({...PLAN,checks})}},execute:async()=>{browserCalls++;throw Error('Contradictory plan cannot run')}});
+ await assert.rejects(()=>c.plan({request:'Add a Show tip toggle.',mode:'live',base:ORIGINAL}),/contradict/);assert.equal(modelCalls,2);assert.equal(browserCalls,0);assert.equal(c.task.status,'Blocked');assert.equal(canAccept(c.task),false);
+ const valid=modelChecks([checks[0],{...checks[1],click:'#show-tip'}]);assert.equal(valid[1].steps[0].action,'click');assert.equal(valid[1].steps[0].selector,'#show-tip');
+});
+test('heterogeneous ANY values remain generic while explicit single observations reject conflicts',()=>{
+ const value=(expected,extra={})=>({name:'Value '+expected,selector:'li',property:'text',operator:'equals',expected,...extra});
+ assert.equal(modelChecks([value('Alpha'),value('Beta')]).length,2);
+ for(const extra of [{first:true},{all:true},{selector:'#single'}])assert.throws(()=>modelChecks([value('Alpha',extra),value('Beta',extra)]),/contradict/);
+ assert.equal(modelChecks([value('Alpha',{attribute:'data-a',property:'attribute',first:true}),value('Beta',{attribute:'data-b',property:'attribute',first:true})]).length,2);
 });

@@ -61,7 +61,10 @@ steps, and assertions on text, count, value, checked, attribute, visibility and
 computed style. Node assertions pass when any matched node satisfies them;
 `all:true` requires every match, and `first:true` inspects only the first. Count
 checks count all matches and actions target the first. No matching node fails a
-node assertion. Plans bind the check-semantics version; older evidence must be
+node assertion. Every top-level check starts in a fresh page with empty app
+storage; its setup actions do not carry into another check. State-change checks
+must declare their own actions, and contradictory single-observation outcomes
+with identical actions are rejected before approval. Plans bind the check-semantics version; older evidence must be
 replanned instead of being reinterpreted. Assertions are data, not executable test code. Regular expressions
 use a bounded simple subset. Baseline results are retained for comparison; a
 behavior-preserving refactor is allowed. Exact source no-ops, missing check
@@ -103,6 +106,7 @@ node --test tests/*.test.mjs
 python3 tests/page-workspace-browser.py
 python3 tests/page-storage-browser.py
 python3 tests/page-check-semantics-browser.py
+python3 tests/page-check-isolation-browser.py
 node scripts/generate-workboard-preview.mjs --check
 python3 scripts/check-public.py
 ```

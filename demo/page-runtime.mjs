@@ -35,6 +35,22 @@ export async function createPagePreview(container,bundle,{signal,storage={},onSt
 }
 export async function runPageChecks(bundle,checks,options={}){
   const normalized=validateChecks(checks),container=document.createElement('div');container.style.cssText='position:fixed;left:-20000px;top:0;width:1200px;height:900px;overflow:hidden;pointer-events:none';container.setAttribute('aria-hidden','true');document.body.append(container);
-  let preview;
-  try{preview=await createPagePreview(container,bundle,{...options,storage:{},onStorage:()=>{}});return await preview.check(normalized);}finally{preview?.destroy();container.remove();}
+  const rows=[],errors=[];let observations;
+  try{
+    // Each approved case owns its setup and gets the same clean app baseline.
+    // Only actions inside that case may share state; QA cannot poison later cases.
+    for(const check of normalized){
+      let preview;
+      try{
+        preview=await createPagePreview(container,bundle,{...options,storage:{},onStorage:()=>{}});
+        const result=await preview.check([check]);
+        if(!Array.isArray(result.rows)||result.rows.length!==2||result.rows[0]?.name!==check.name||!Array.isArray(result.errors))throw new Error('The browser check did not return complete evidence.');
+        rows.push(result.rows[0]);
+        for(const error of result.errors)errors.push(check.name+': '+error);
+        observations=result.observations;
+      }finally{preview?.destroy();}
+    }
+    rows.push({name:'Page runs without browser errors',pass:errors.length===0,expected:[],actual:errors});
+    return {rows,errors,observations};
+  }finally{container.remove();}
 }

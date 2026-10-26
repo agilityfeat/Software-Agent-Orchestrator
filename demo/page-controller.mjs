@@ -1,5 +1,4 @@
-import {validateChecks} from './page-checks.mjs';
-import {canonicalBundle,validateBundle,applyEdits,validatePlan,qaCases,canAccept,digest,extractJSON,CHECK_HELP,DEFAULT_REQUEST,CHECK_SEMANTICS} from './page-contract.mjs';
+import {canonicalBundle,validateBundle,applyEdits,validatePlan,qaCases,canAccept,digest,extractJSON,CHECK_HELP,DEFAULT_REQUEST,CHECK_SEMANTICS,validateConsistentChecks} from './page-contract.mjs';
 import {GUIDED_PLAN,guidedDateEdit} from './page-baseline.mjs';
 export class Controller{
   constructor({model,execute,onChange=()=>{},delay=250}){Object.assign(this,{model,execute,onChange,delay});this.task=null;this.busy=false;this.epoch=0;this.abort=null;}
@@ -21,7 +20,7 @@ export class Controller{
         this.assert(epoch,t);const raw=mode==='guided'?JSON.stringify(GUIDED_PLAN):await this.model.generate('Planner',prompt+correction);this.assert(epoch,t);t.plannerResponses.push(raw);
         try{t.plan=validatePlan(extractJSON(raw));if(t.plan.checks.length>4)throw Error('Use at most four approved browser checks.');const baseline=await this.execute(t.base,t.plan.checks,{signal:this.abort.signal});this.assert(epoch,t);t.baseline=baseline;
           break;
-        }catch(error){this.assert(epoch,t);if(attempt===1||mode==='guided')throw error;correction=`\nCorrect the previous plan: ${error.message}. Return complete valid JSON with short flat checks for rendered DOM. Use no click/actions for static content; no JavaScript-source selectors.`;this.event('Planner','Requesting one correction to the plan’s browser checks.');}
+        }catch(error){this.assert(epoch,t);if(attempt===1||mode==='guided')throw error;correction=`\nCorrect the previous plan: ${error.message}. Return complete valid JSON with short flat checks for rendered DOM. Use no click/actions for static content. For an interactive state change, supply explicit click/actions in that check; every check starts fresh. Use distinct selectors for distinct nodes. No JavaScript-source selectors.`;this.event('Planner','Requesting one correction to the plan’s browser checks.');}
       }
       t.planHash=await digest(JSON.stringify(t.plan));t.baseHash=await digest(canonicalBundle(t.base));this.assert(epoch,t);t.status='Ready';t.phase='Awaiting authorization';this.event('Planner',t.plan.summary);return t;
     }catch(error){if(epoch===this.epoch)this.block(error);throw error;}finally{if(epoch===this.epoch){this.busy=false;this.emit();}}
@@ -69,7 +68,7 @@ Return a SHORT complete JSON patch. No Markdown or explanation.`;
           try{qa=extractJSON(response);extras=qaCases(qa,remaining);break;}catch(error){if(qaAttempt===1)throw error;correction=`\nPrevious response was rejected: ${error.message}. Return only {"summary":"your assessment","cases":[]}. All required checks already ran; empty cases is correct. Do not repeat rows or omit mandatory assertion fields.`;this.event('Tester','Requesting one correction to QA’s check format.');}
         }
         t.qaSummary=qa.summary.slice(0,1000);
-        const checks=validateChecks([...t.plan.checks,...extras]);if(extras.length)result=await this.executeCandidate(t,bundle,checks);this.assert(epoch,t);
+        const checks=validateConsistentChecks([...t.plan.checks,...extras]);if(extras.length)result=await this.executeCandidate(t,bundle,checks);this.assert(epoch,t);
         t.checks=checks;const checksHash=await digest(JSON.stringify(checks));this.assert(epoch,t);
         t.evidence={hash:t.hash,checksHash,rows:result.rows,observations:result.observations,at:new Date().toISOString()};version.checks=structuredClone(checks);version.evidence=structuredClone(t.evidence);
         this.event('Tester',`${result.rows.filter(row=>row.pass).length}/${result.rows.length} executed browser checks passed. ${qa.summary}`);
@@ -81,7 +80,7 @@ Return a SHORT complete JSON patch. No Markdown or explanation.`;
   async verify(t=this.task){
     if(t.plan?.checkSemantics!==CHECK_SEMANTICS)throw Error('Browser check rules changed. Create a new plan.');
     this.abort?.abort();this.abort=new AbortController();const signal=this.abort.signal;
-    const epoch=this.epoch,authorization=JSON.stringify({request:t.request,base:t.base,plan:t.plan,checks:t.checks,hash:t.hash,planHash:t.planHash,baseHash:t.baseHash,evidenceHash:t.evidence?.hash,checksHash:t.evidence?.checksHash}),candidate=canonicalBundle(t.candidate),checks=validateChecks(t.checks);
+    const epoch=this.epoch,authorization=JSON.stringify({request:t.request,base:t.base,plan:t.plan,checks:t.checks,hash:t.hash,planHash:t.planHash,baseHash:t.baseHash,evidenceHash:t.evidence?.hash,checksHash:t.evidence?.checksHash}),candidate=canonicalBundle(t.candidate),checks=validateConsistentChecks(t.checks);
     const [hash,checksHash,planHash,baseHash]=await Promise.all([digest(candidate),digest(JSON.stringify(checks)),digest(JSON.stringify(t.plan)),digest(canonicalBundle(t.base))]);
     this.assert(epoch,t);if(hash!==t.hash||checksHash!==t.evidence?.checksHash||planHash!==t.planHash||baseHash!==t.baseHash||JSON.stringify(checks.slice(0,t.plan.checks.length))!==JSON.stringify(t.plan.checks))throw Error('Saved source or checks changed. Create a fresh plan.');
     await this.execute(t.base,t.plan.checks,{signal});this.assert(epoch,t);

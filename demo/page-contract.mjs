@@ -1,7 +1,7 @@
 import {validateChecks} from './page-checks.mjs';
 import {digest,extractJSON} from './core.mjs';
 export {digest,extractJSON};
-export const CHECK_SEMANTICS='any-node-v1';
+export const CHECK_SEMANTICS='any-node-isolated-v2';
 export const DEFAULT_REQUEST="Let's add a date in table.";
 export function validateBundle(value){
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='css,html,js')throw Error('The app needs HTML, CSS and JavaScript files.');
@@ -29,6 +29,20 @@ export function applyEdits(base,value){
   }else throw Error('Coder must return edits or complete replacement files.');
   const result=validateBundle(next);if(canonicalBundle(result)===canonicalBundle(base))throw Error('The candidate did not change any app source.');return result;
 }
+export function validateConsistentChecks(value){
+  const checks=validateChecks(value),observations=new Map();
+  for(const check of checks)for(const assertion of check.assertions){
+    if(assertion.operator!=='equals')continue;
+    const quantifier=assertion.first===true?'first':assertion.all===true?'all':'any';
+    // ANY over a heterogeneous list may legitimately match different values.
+    const singleton=assertion.property==='count'||quantifier!=='any'||/^#[A-Za-z_][\w-]*$/.test(assertion.selector)||['body','html',':root'].includes(assertion.selector);
+    if(!singleton)continue;
+    const key=JSON.stringify([check.steps,assertion.selector,assertion.property,assertion.attribute||'',quantifier]);
+    if(observations.has(key)&&!Object.is(observations.get(key),assertion.expected))throw Error('Browser checks contradict each other for the same observation and actions. Supply explicit click/actions for a state change, or distinct selectors for different nodes.');
+    observations.set(key,assertion.expected);
+  }
+  return checks;
+}
 export function modelChecks(value){
   if(!Array.isArray(value))throw Error('Browser checks must be an array.');
   const normalized=value.map(check=>{
@@ -39,7 +53,7 @@ export function modelChecks(value){
     if(click!==undefined&&(typeof click!=='string'||!click.trim()))throw Error('click must be a DOM selector.');
     if(actions!==undefined&&!Array.isArray(actions))throw Error('actions must be an array of browser actions.');
     return {name,steps:[...(actions||[]),...(click?[{action:'click',selector:click}]:[])],assertions:[assertion]};
-  });return validateChecks(normalized);
+  });return validateConsistentChecks(normalized);
 }
 export function validatePlan(value){
   if(!value||typeof value.summary!=='string'||!value.summary.trim()||value.summary.length>600||!Array.isArray(value.steps)||!value.steps.length||value.steps.length>3||value.steps.some(step=>typeof step!=='string'||!step.trim()||step.length>300))throw Error('Planner must return a summary, one to three steps and browser checks.');
@@ -51,4 +65,4 @@ export function qaCases(value,remaining){
 }
 export function canAccept(t){return Boolean(t?.kind==='workspace'&&t.plan?.checkSemantics===CHECK_SEMANTICS&&t.mode!=='recorded'&&t.status==='Review'&&t.candidate&&t.hash&&t.evidence?.hash===t.hash&&t.evidence?.checksHash&&t.evidence.rows?.length&&t.evidence.rows.every(row=>row.pass===true));}
 export function successfulLiveRun(t){return Boolean(t?.kind==='workspace'&&t.mode==='live'&&['Review','Done'].includes(t.status)&&canAccept({...t,status:'Review'}));}
-export const CHECK_HELP=`Use 1–2 simple flat browser checks by default, at most 4: {"name":"what is checked","selector":"body","property":"text","operator":"includes","expected":"requested visible text"}. Each object is one assertion, no assertions/steps nesting needed. For static visible-text outcomes default to selector body, property text, operator includes. Use an exact existing stable ID only when the location matters. Avoid invented or deep descendant chains: an ID already selects that element, so do not append its own tag as a child. For new interactive elements choose short explicit IDs. Node assertions pass when ANY matched node satisfies the assertion by default. Use all:true to require EVERY matched node, or first:true to check only the FIRST. Never combine all:true with first:true. A selector matching no nodes fails node assertions. Count checks count every match; actions target the first match. For visible text you may also use a container such as body or thead. For static text DO NOT click. Check only rendered DOM, never JavaScript variables/source: there is no js element. property: text,count,value,checked,visible,attribute,style. Operators: equals,includes,matches,gt,gte; expected is a string for text/value/style/attribute, number for count, boolean for visible/checked. For style/attribute also supply attribute (CSS property/DOM attribute name). Prefer includes/equals. matches permits exact {N} repeats up to 100, no ranges/groups/nesting, at most one variable quantifier. Only if an interaction is required add "click":"button selector"; for multiple actions use "actions":[{"action":"input","selector":"input selector","value":"text"},{"action":"click","selector":"button selector"}]. No code, pass flags or JS-source selectors.`;
+export const CHECK_HELP=`Use 1–2 simple flat browser checks by default, at most 4: {"name":"what is checked","selector":"body","property":"text","operator":"includes","expected":"requested visible text"}. Each object is one assertion, no assertions/steps nesting needed. Each check starts in a fresh page with empty app storage; it does not inherit actions or state from another check. To check a changed state, include every required click/action in that check; naming an interaction does not perform it. For static visible-text outcomes default to selector body, property text, operator includes. Use an exact existing stable ID only when the location matters. Avoid invented or deep descendant chains: an ID already selects that element, so do not append its own tag as a child. For new interactive elements choose short explicit IDs. Node assertions pass when ANY matched node satisfies the assertion by default. Use all:true to require EVERY matched node, or first:true to check only the FIRST. Never combine all:true with first:true. A selector matching no nodes fails node assertions. Count checks count every match; actions target the first match. For visible text you may also use a container such as body or thead. For static text DO NOT click. Check only rendered DOM, never JavaScript variables/source: there is no js element. property: text,count,value,checked,visible,attribute,style. Operators: equals,includes,matches,gt,gte; expected is a string for text/value/style/attribute, number for count, boolean for visible/checked. For style/attribute also supply attribute (CSS property/DOM attribute name). Prefer includes/equals. matches permits exact {N} repeats up to 100, no ranges/groups/nesting, at most one variable quantifier. Only if an interaction is required add "click":"button selector"; for multiple actions use "actions":[{"action":"input","selector":"input selector","value":"text"},{"action":"click","selector":"button selector"}]. No code, pass flags or JS-source selectors.`;
