@@ -78,7 +78,8 @@ The check DSL supports arbitrary CSS selectors, click/input/select/key/wait
 steps, and assertions on text, count, value, checked, attribute, visibility and
 computed style. Node assertions pass when any matched node satisfies them;
 `all:true` requires every match, and `first:true` inspects only the first. Count
-checks count all matches and actions target the first. No matching node fails a
+checks count all matches and actions target the first. To count cells in one
+row, use `tbody tr:first-child td`; `tbody tr td` counts the entire table. No matching node fails a
 node assertion. Up to two checks run concurrently, each in its own new opaque
 frame. Every top-level check starts in a fresh page with empty app
 storage; its setup actions do not carry into another check. State-change checks
