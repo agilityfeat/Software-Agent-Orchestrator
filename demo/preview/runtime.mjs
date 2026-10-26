@@ -6,7 +6,7 @@
   const nativeThen=Promise.prototype.then,NativeBlob=Blob,blobURL=URL.createObjectURL.bind(URL),revokeURL=URL.revokeObjectURL.bind(URL);
   const NativePromise=Promise,NativeRegExp=RegExp,NativeError=Error,NativeString=String;
   const timeout=window.setTimeout.bind(window),add=EventTarget.prototype.addEventListener,remove=EventTarget.prototype.removeEventListener,dispatch=EventTarget.prototype.dispatchEvent;
-  const qsa=Document.prototype.querySelectorAll,eqsa=Element.prototype.querySelectorAll,attr=Element.prototype.getAttribute,setAttr=Element.prototype.setAttribute,rect=Element.prototype.getBoundingClientRect;
+  const qsa=Document.prototype.querySelectorAll,eqsa=Element.prototype.querySelectorAll,matches=Element.prototype.matches,attr=Element.prototype.getAttribute,setAttr=Element.prototype.setAttribute,rect=Element.prototype.getBoundingClientRect;
   const innerTextGetter=Object.getOwnPropertyDescriptor(HTMLElement.prototype,'innerText').get;
   const textGetter=Object.getOwnPropertyDescriptor(Node.prototype,'textContent').get,htmlGetter=Object.getOwnPropertyDescriptor(Element.prototype,'outerHTML').get,tagGetter=Object.getOwnPropertyDescriptor(Element.prototype,'tagName').get;
   const inputValue=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value'),textValue=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value'),selectValue=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value'),checkedGetter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'checked').get;
@@ -52,6 +52,7 @@
     if(property==='style')return apply(styleValue,styleGetter(node),[attribute]);
     if(property==='attribute')return apply(attr,node,[attribute]);
     if(property==='checked')return apply(checkedGetter,node,[]);
+    if(property==='disabled'){const tag=apply(tagGetter,node,[]);if(tag!=='BUTTON'&&tag!=='INPUT'&&tag!=='SELECT'&&tag!=='TEXTAREA'&&tag!=='FIELDSET'&&tag!=='OPTION'&&tag!=='OPTGROUP')throw new NativeError('Disabled checks need a native form control.');return apply(matches,node,[':disabled']);}
     if(property==='value'){const tag=apply(tagGetter,node,[]);return apply((tag==='TEXTAREA'?textValue:tag==='SELECT'?selectValue:inputValue).get,node,[]);}
     if(property==='visible'){const box=apply(rect,node,[]),style=styleGetter(node);return apply(rectWidth,box,[])>0&&apply(rectHeight,box,[])>0&&apply(styleValue,style,['display'])!=='none'&&apply(styleValue,style,['visibility'])!=='hidden'&&apply(styleValue,style,['opacity'])!=='0';}
     throw new NativeError('Unknown property.');

@@ -51,3 +51,10 @@ test('log UI never interprets generated content as HTML or code',async()=>{const
 
 test('mode changes refresh the modal even when task status is unchanged',()=>{let changes=0;const log=new RunLog({onChange:()=>changes++});const t=task({status:'Done',phase:'Accepted locally'});log.observe(t,false);const before=changes;log.observe({...t,mode:'recorded'},false);assert.ok(changes>before);assert.match(log.status().detail,/not live execution/);});
 test('active headline does not duplicate the role prefix',()=>{const {log}=setup();log.model({type:'start',role:'Coder',operation:'generate',inputChars:1});log.model({type:'status',text:'Coder: generating an app patch'});assert.equal(log.status().title,'Coder · generating an app patch');});
+
+test('opening saved error details restores bounded proposals without duplicating live output or granting evidence',()=>{
+ const {log}=setup();const output='{"checks":[{"property":"unknown"}]}',t=task({status:'Blocked',phase:'Needs attention',plannerResponses:[output],events:[{role:'Controller',text:'Check rejected: unknown property',at:'2026-01-01T00:00:00Z'}]});
+ log.observe(t,false);const before=structuredClone(t);log.restoreOutputs(t);log.restoreOutputs(t);assert.equal(log.rows.filter(row=>row.detail===output).length,1);assert.deepEqual(t,before);assert.equal(log.active.size,0);assert.match(log.exportText(),/Check rejected/);
+ log.reset('other-task');log.restoreOutputs(t);assert.equal(log.rows.length,0);
+ log.observe({...t,plannerResponses:['x'.repeat(7000)]},false);log.restoreOutputs({...t,plannerResponses:['x'.repeat(7000)]});log.restoreOutputs({...t,plannerResponses:['x'.repeat(7000)]});assert.equal(log.rows.length,2);assert.ok(log.rows.at(-1).detail.length<6100);
+});

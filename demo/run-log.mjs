@@ -40,6 +40,16 @@ export class RunLog {
     }
     this.cursor = (task.events || []).length;
   }
+  restoreOutputs(task) {
+    // Persisted completed outputs remain diagnostics; they never authorize work.
+    if (task?.id !== this.taskId) return;
+    for (const [role, field] of [['Planner','plannerResponses'],['Coder','coderResponses'],['Tester','qaResponses']]) {
+      const output = task[field]?.at(-1);
+      if (typeof output !== 'string' || !output) continue;
+      const detail = bounded(output);
+      if (!this.rows.some(row => row.role === role && row.detail === detail)) this.add(role, 'Saved completed response · see the error above for validation result', detail);
+    }
+  }
   begin(role, message) {
     const step = {role, message, started: this.now(), last: this.now(), taskId: this.taskId};
     this.active.add(step); this.add(role, message);
@@ -129,8 +139,14 @@ export function mountRunLog(doc = document) {
     if (fresh.length && follow.checked) list.scrollTop = list.scrollHeight;
   };
   log.onChange = render;
-  button.onclick = () => { if (dialog.open) return; dialog.showModal(); feedback.textContent = ''; render(); interval = setInterval(status, 500); };
-  dialog.addEventListener('close', () => { clearInterval(interval); interval = null; button.focus(); });
+  let returnFocus = button;
+  log.open = ({details = false, trigger = button} = {}) => {
+    returnFocus = trigger;
+    if (!dialog.open) { dialog.showModal(); feedback.textContent = ''; render(); interval = setInterval(status, 500); }
+    if (details) { const outputs = list.querySelectorAll('details'); if (outputs.length) outputs[outputs.length - 1].open = true; list.scrollTop = list.scrollHeight; }
+  };
+  button.onclick = () => log.open();
+  dialog.addEventListener('close', () => { clearInterval(interval); interval = null; (returnFocus?.isConnected ? returnFocus : button).focus(); });
   dialog.addEventListener('click', event => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } });
   follow.onchange = () => { if (follow.checked) list.scrollTop = list.scrollHeight; };
   return log;

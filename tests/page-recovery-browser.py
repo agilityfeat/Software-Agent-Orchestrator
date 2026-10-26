@@ -28,8 +28,8 @@ model_fixture = '''export class LocalModel{
  cancel(){this.epoch++;this.pending=null;this.ready=false;this.onActivity({type:'stopped',message:'Synthetic model stopped'});this.onStatus('Synthetic model stopped');}
  async generate(role){const epoch=this.epoch;this.pending={type:'generate'};this.onActivity({type:'start',operation:'generate',role,inputChars:50});window.__calls??=[];window.__calls.push(role);const response=value=>{if(epoch===this.epoch)this.onActivity({type:'complete',operation:'generate',output:value});return value;};try{
   if(window.__holdRole===role)await new Promise((resolve,reject)=>{window.__held??=[];window.__held.push({role,resolve,reject});});
-  if(role==='Planner')return response(JSON.stringify({summary:'Add a marker to the app.',steps:['Build the requested marker'],checks:[{name:'Marker appears',assertions:[{selector:'#marker',property:window.__badPlan?'unknown':'text',operator:'equals',expected:'Ready'}]}]}));
-  if(role==='Coder')return response(JSON.stringify({files:{html:'<main><h1>Accepted recovery app</h1><p id="marker">Ready</p></main>',css:'main{font-family:system-ui;padding:24px}',js:'localStorage.setItem("accepted","saved");'}}));
+  if(role==='Planner'){window.__marker='Ready '+(window.__markerSequence=(window.__markerSequence||0)+1);return response(JSON.stringify({summary:'Add a marker to the app.',steps:['Build the requested marker'],checks:[{name:'Marker appears',assertions:[{selector:'#marker',property:window.__badPlan?'unknown':'text',operator:'equals',expected:window.__marker}]}]}));}
+  if(role==='Coder')return response(JSON.stringify({files:{html:'<main><h1>Accepted recovery app</h1><p id="marker">'+window.__marker+'</p></main>',css:'main{font-family:system-ui;padding:24px}',js:'localStorage.setItem("accepted","saved");'}}));
   return response(JSON.stringify({summary:'Actual browser checks verify the marker.',cases:[]}));
  }finally{if(epoch===this.epoch)this.pending=null;}}
 }'''
@@ -119,9 +119,31 @@ try:
         # Planner format failures expose the real reason; idle loaded model remains ready after recovery.
         start_over();page.evaluate('window.__badPlan=true');page.locator('#request').fill('A request with a deliberately invalid model plan.');page.locator('#plan').click()
         page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Needs attention'")
-        assert 'Unknown browser assertion' in page.locator('#artifact-body').inner_text()
-        assert 'planner is reviewing' not in page.locator('#artifact-body').inner_text()
+        assert 'Unsupported browser-check property "unknown"' in page.locator('#artifact-body').inner_text()
+        assert 'Marker appears' in page.locator('#notice').inner_text()
+        page.locator('#notice-details').click()
+        assert page.locator('#run-log-dialog').is_visible()
+        assert page.locator('.run-log-list details[open]').count()==1
+        assert 'unknown' in page.locator('.run-log-list details[open]').inner_text()
+        page.locator('#run-log-dialog').get_by_role('button',name='Close',exact=True).click()
+        assert page.locator('#notice-details').evaluate('(node)=>node===document.activeElement')
+        idle_blocked=stored()
         start_over();unchanged();assert page.locator('#load-model').is_disabled();ready()
+        page.locator('#request').fill('Another invalid plan to check error-link lifetime.');page.locator('#plan').click()
+        page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Needs attention'")
+        page.locator('#request').fill('A fresh request after the failed plan.')
+        assert page.locator('#notice').is_hidden() and page.locator('#notice-details').is_hidden()
+        assert page.locator('#artifact-title').inner_text()=='Describe your app change'
+        wait_saved_null()
+        page.evaluate("async value=>{const{save}=await import('./storage.mjs');await save(value)}",idle_blocked)
+        page.reload();page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Needs attention'")
+        page.locator('#artifact-body').get_by_role('button',name='View error log').click()
+        assert 'Saved completed response' in page.locator('.run-log-list').inner_text()
+        assert 'unknown' in page.locator('.run-log-list details[open]').inner_text()
+        assert 'Unsupported browser-check property' in page.locator('.run-log-list').inner_text()
+        page.locator('#run-log-dialog').get_by_role('button',name='Close',exact=True).click()
+        assert 'planner is reviewing' not in page.locator('#artifact-body').inner_text()
+        start_over();unchanged();page.locator('#load-model').click();ready()
         page.evaluate('window.__badPlan=false');plan('A valid request after the blocked plan.')
         # Leaving an in-flight Recorded verification cannot post an obsolete error.
         page.evaluate('window.__holdBrowser=true');page.locator('#mode').select_option('recorded');page.wait_for_function("()=>typeof window.__releaseBrowser==='function'")
@@ -131,7 +153,7 @@ try:
         assert page.locator('#request').is_enabled()
         page.locator('#mode').select_option('live');plan('A valid request before the reload check.')
         # Reloading an active Build produces an actionable interrupted state.
-        page.evaluate("window.__holdRole='Coder'");page.locator('#run').click();page.wait_for_function("()=>window.__held?.length===3")
+        page.evaluate("window.__holdRole='Coder'");page.locator('#run').click();page.wait_for_function("()=>window.__held?.length===1")
         page.wait_for_function("async()=>{const{load}=await import('./storage.mjs');return(await load())?.task?.status==='Active'}")
         page.reload();page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Interrupted by reload'")
         assert 'interrupted' in page.locator('#artifact-body').inner_text();start_over();unchanged()

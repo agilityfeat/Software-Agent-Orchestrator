@@ -125,6 +125,10 @@ test('generation strategy keeps production baseline and enables an explicit boun
   assert.deepEqual(settings('Coder',{}),{strategy:'baseline',repair:false,thinking:true,maxOutputTokens:4096});
   assert.deepEqual(settings('Coder',{strategy:'fast-initial'}),{strategy:'fast-initial',repair:false,thinking:false,maxOutputTokens:2048});
   assert.deepEqual(settings('Coder',{strategy:'fast-initial',repair:true}),{strategy:'fast-initial',repair:true,thinking:true,maxOutputTokens:4096});
+  assert.deepEqual(settings('Planner',{}),{strategy:'baseline',repair:false,thinking:false,maxOutputTokens:2048});
+  assert.deepEqual(settings('Planner',{repair:true}),{strategy:'baseline',repair:true,thinking:true,maxOutputTokens:4096});
+  assert.deepEqual(settings('Planner',{repair:false}),{strategy:'baseline',repair:false,thinking:false,maxOutputTokens:2048});
+  assert.deepEqual(settings('Tester',{repair:true}),{strategy:'baseline',repair:false,thinking:false,maxOutputTokens:2048});
   assert.deepEqual(settings('Tester',{strategy:'fast-initial'}),{strategy:'baseline',repair:false,thinking:false,maxOutputTokens:2048});
   for(const options of [null,[],{strategy:'unknown'},{repair:'true'},{maxOutputTokens:999999}])assert.throws(()=>settings('Coder',options));
  });
@@ -216,5 +220,24 @@ test('cancelled workers cannot append late diagnostic milestones to a replacemen
   const old=workers[0],pending=model.generate('Planner','Synthetic');const rejected=assert.rejects(pending,/stopped/);model.cancel();await rejected;const count=events.length;
   old.emit({type:'diagnostic',role:'Planner',stage:'validation',text:'late milestone'});old.emit({type:'generated',text:'late output'});assert.equal(events.length,count);assert.equal(model.activity,null);assert.equal(model.ready,false);
   const retry=model.start();workers[1].emit({type:'loaded'});await retry;assert.equal(model.ready,true);
+ });
+});
+
+test('Planner correction applies bounded reasoning in the actual conversation config while Tester remains unchanged',async()=>{
+ for(const [role,options,thinking,maxOutputTokens] of [['Planner',{repair:false},false,2048],['Planner',{repair:true},true,4096],['Tester',{repair:true},false,2048]]){
+  let config,deleted=false;
+  await instrumentedWorker({async createConversation(value){config=value;return {async sendMessage(){return {content:'{"summary":"bounded synthetic response"}'}},async delete(){deleted=true}}}},async evaluate=>{
+   const result=JSON.parse(JSON.stringify(await evaluate(`generateResponse({role:${JSON.stringify(role)},prompt:'Synthetic repair prompt',options:${JSON.stringify(options)}})`)));
+   assert.equal(result.metrics.outcome,'completed');assert.equal(config.preface.extra_context.enable_thinking,thinking);assert.equal(config.sessionConfig.maxOutputTokens,maxOutputTokens);assert.equal(config.enableConstrainedDecoding,true);assert.equal(deleted,true);
+  });
+ }
+});
+test('model facade forwards Planner repair and failed correction never leaves the loader ready',async()=>{
+ await withWorker(async(model,workers,states)=>{
+  const loading=model.start();workers[0].emit({type:'loaded'});await loading;
+  let sent;workers[0].postMessage=value=>sent=value;
+  const initial=model.generate('Planner','Synthetic first plan',{repair:false});assert.deepEqual(sent.options,{repair:false});workers[0].emit({type:'generated',text:'initial'});await initial;assert.equal(model.ready,true);
+  const correction=model.generate('Planner','Synthetic corrected plan',{repair:true});assert.deepEqual(sent.options,{repair:true});assert.equal(sent.role,'Planner');const rejected=assert.rejects(correction,/Synthetic correction failure/);workers[0].emit({error:'Synthetic correction failure',metrics:{role:'Planner',repair:true,outcome:'error'}});await rejected;
+  assert.equal(model.ready,false);assert.equal(workers[0].stopped,true);assert.equal(states.at(-1).phase,'error');assert.equal(model.lastMetrics.repair,true);assert.equal(model.lastMetrics.outcome,'error');
  });
 });

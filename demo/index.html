@@ -20,7 +20,7 @@
     <div class="runtime-copy"><strong id="model-status" role="status">Local model not loaded</strong><small id="mode-note">Scripted date-column example, real browser checks. No model download.</small></div>
     <button id="load-model" class="primary">Load Gemma · ~3 GB</button><label class="file-label" title="Use an already downloaded Gemma 4 E4B web model">Local file<input type="file" id="model-file" accept=".litertlm"></label>
   </section>
-  <div id="notice" class="notice" role="status" hidden></div>
+  <div id="notice" class="notice" role="status" hidden><span id="notice-message"></span><button id="notice-details" type="button" class="quiet error-details" aria-haspopup="dialog" aria-controls="run-log-dialog" hidden>View error log</button></div>
   <div id="workspace" class="workspace">
     <section class="builder panel" aria-label="Builder workboard">
       <div class="panel-heading"><div><span class="overline">01 / THE TEAM</span><h2>Builder workboard</h2></div><span class="tag" id="task-mode">GUIDED</span></div>

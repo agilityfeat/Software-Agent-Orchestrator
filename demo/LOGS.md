@@ -22,3 +22,22 @@ reload retains the existing task milestones but not detailed session telemetry.
 Run the additional checks with `node --test tests/run-log.test.mjs` and
 `python3 tests/run-log-browser.py`. The browser component test uses explicit
 model fixtures, not an actual GPU inference run or full-app integration test.
+
+When a run stops with an error, **View error log** appears beside the notice and
+in the blocked task. It opens the current log with the latest output expanded.
+After a reload, the same link restores bounded saved model outputs and the task
+error; earlier transient runtime events are not recovered. Unsupported check
+properties and operators identify the check, assertion number, and supported
+values so the model can correct its plan. Native form controls support boolean
+`disabled` checks, including browser-defined fieldset and optgroup inheritance.
+
+Plans for visible or behavioral changes must include a requested-outcome check
+that fails on the current app. A plan whose checks all already pass receives one
+correction with bounded browser observations; it cannot proceed unchanged.
+Explicit behavior-preserving refactors can use `verification:"preserve"`, shown
+in the plan as preserving existing behavior; all baseline checks may pass.
+
+The single Planner correction enables bounded reasoning (4,096 output tokens),
+while its initial plan stays at 2,048 tokens without extended reasoning. The
+correction receives the precise validation error and bounded browser facts, not
+the rejected raw JSON. Raw completed responses stay available in the error log.
