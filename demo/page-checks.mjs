@@ -1,4 +1,4 @@
-const props=new Set(['text','count','value','checked','attribute','visible','style']);
+const props=new Set(['text','count','value','checked','disabled','attribute','visible','style']);
 const operators=new Set(['includes','equals','matches','gt','gte']);
 // Small regular-expression language: literal/class atoms, anchors, exact {N}
 // repeats up to 100, and at most one variable repeat. No groups or backreferences.
@@ -50,18 +50,22 @@ export function validateChecks(value){
       return out;
     });
     if(!Array.isArray(check.assertions)||!check.assertions.length||check.assertions.length>12)throw new Error('Each browser check needs between one and twelve assertions.');
-    const assertions=check.assertions.map(assertion=>{
-      if(!object(assertion)||!props.has(assertion.property)||!operators.has(assertion.operator))throw new Error('Unknown browser assertion.');
+    const assertions=check.assertions.map((assertion,index)=>{
+      try{
+      if(!object(assertion))throw new Error('Use an assertion object with selector, property, operator and expected.');
+      if(!props.has(assertion.property))throw new Error(`Unsupported browser-check property ${JSON.stringify(assertion.property)}. Supported properties: ${[...props].join(', ')}.`);
+      if(!operators.has(assertion.operator))throw new Error(`Unsupported browser-check operator ${JSON.stringify(assertion.operator)}. Supported operators: ${[...operators].join(', ')}.`);
       const out={selector:selector(assertion.selector),property:assertion.property,operator:assertion.operator,expected:assertion.expected};
       if(assertion.property==='attribute'||assertion.property==='style'){if(typeof assertion.attribute!=='string'||!/^[a-zA-Z_][\w:.-]{0,60}$/.test(assertion.attribute))throw new Error('Attribute and style checks need a property name.');out.attribute=assertion.attribute;}
       if(assertion.property==='count'){if(!Number.isInteger(assertion.expected)||assertion.expected<0||assertion.expected>10000||!['equals','gt','gte'].includes(assertion.operator))throw new Error('Count checks need a nonnegative integer.');}
-      else if(assertion.property==='visible'||assertion.property==='checked'){if(typeof assertion.expected!=='boolean'||assertion.operator!=='equals')throw new Error('Boolean checks use equals true or false.');}
+      else if(assertion.property==='visible'||assertion.property==='checked'||assertion.property==='disabled'){if(typeof assertion.expected!=='boolean'||assertion.operator!=='equals')throw new Error('Boolean checks use equals true or false.');}
       else if(typeof assertion.expected!=='string'||assertion.expected.length>1000||!['equals','includes','matches'].includes(assertion.operator))throw new Error('Text checks use equals, includes or matches.');
       if(assertion.operator==='matches')safePattern(assertion.expected);
       if(assertion.all!==undefined){if(typeof assertion.all!=='boolean')throw new Error('all must be true or false.');out.all=assertion.all;}
       if(assertion.first!==undefined){if(typeof assertion.first!=='boolean')throw new Error('first must be true or false.');out.first=assertion.first;}
       if(assertion.all===true&&assertion.first===true)throw new Error('Choose all or first for a node assertion, not both.');
       return out;
+      }catch(error){throw new Error(`Check ${JSON.stringify(check.name)}, assertion ${index+1}: ${error.message}`);}
     });
     return {name:check.name.trim(),steps:normalizedSteps,assertions};
   });

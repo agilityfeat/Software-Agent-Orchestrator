@@ -44,7 +44,10 @@ idle loaded model stays ready; stopping active inference releases its worker, so
 click **Load Gemma** again to initialize from the browser cache. **Reset demo**
 also works during a run and asks before restoring the sample app and clearing
 saved runs. Interrupted or blocked runs show their actual failure and recovery
-action. Late results cannot revive a cleared task.
+action. **View error log** beside the error opens its activity and latest output.
+Saved blocked runs retain bounded completed model responses after reload;
+transient runtime events remain session-only. Late results cannot revive a
+cleared task.
 
 ## Full-page source and checks
 
@@ -68,8 +71,9 @@ current files and actual failures; Tester independently reviews the actual DOM
 results and may propose extra data-only checks. The host executes them in real
 browser DOMs. It never treats a model's pass flag as evidence. There are at most
 two Coder repair cycles, with raw role responses retained for diagnosis.
-The first build uses a short response without extended reasoning; repairs enable
-reasoning again. Streaming activity reports elapsed seconds, actual received
+The first plan and build use short responses without extended reasoning. The
+one Planner correction and bounded Coder repairs enable reasoning with a 4,096
+output-token limit; Tester keeps its original short-response settings. Streaming activity reports elapsed seconds, actual received
 updates and time without new output. It never shows invented completion
 percentages or thought text. Each model step still has a fixed three-minute
 deadline; progress does not extend it.
@@ -87,7 +91,13 @@ must declare their own actions, and contradictory single-observation outcomes
 with identical actions are rejected before approval. Plans bind the check-semantics version; older evidence must be
 replanned instead of being reinterpreted. Assertions are data, not executable test code. Regular expressions
 use a bounded simple subset. Baseline results are retained for comparison; a
-behavior-preserving refactor is allowed. Exact source no-ops, missing check
+behavior-preserving refactor is allowed. Plans default to `verification:"change"`:
+at least one requested-outcome check must fail on the current app, while checks
+preserving exceptions may already pass. Otherwise Planner gets one correction
+with bounded actual browser observations, then the run stops if the checks still
+cannot demonstrate a change. For an explicitly requested behavior-preserving
+refactor, `verification:"preserve"` permits passing baseline checks and the plan
+visibly says that checks preserve behavior; review the code for the refactor. Exact source no-ops, missing check
 coverage, errors and failing assertions block acceptance. Source, plan and checks
 are bound to SHA-256 evidence; acceptance rechecks the same bundle and rejects
 stale or cancelled work. Acceptance reruns fresh candidate checks; it does not

@@ -171,5 +171,5 @@ test('start over aborts old work, clears active or blocked tasks, and preserves 
 test('main demo starts Coder without extended reasoning and reserves it for verified repairs',async()=>{
  const calls=[];let builds=0;const m={cancel(){},async generate(role,prompt,options){calls.push({role,options});return JSON.stringify(role==='Planner'?PLAN:role==='Tester'?{summary:'Independent synthetic review.',cases:[]}:++builds===1?{edits:[]}:{files:REPLACEMENT});}};
  const c=await prepared({model:m});await c.run();assert.equal(c.task.status,'Review');assert.equal(c.task.attempt,2);
- assert.deepEqual(calls.filter(c=>c.role==='Coder').map(c=>c.options),[{strategy:'fast-initial',repair:false},{strategy:'fast-initial',repair:true}]);assert.ok(calls.filter(c=>c.role!=='Coder').every(c=>c.options===undefined));assert.ok(canAccept(c.task));
+ assert.deepEqual(calls.filter(c=>c.role==='Coder').map(c=>c.options),[{strategy:'fast-initial',repair:false},{strategy:'fast-initial',repair:true}]);assert.deepEqual(calls.filter(c=>c.role==='Planner').map(c=>c.options),[{repair:false}]);assert.ok(calls.filter(c=>c.role==='Tester').every(c=>c.options===undefined));assert.ok(canAccept(c.task));
 });

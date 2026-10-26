@@ -41,10 +41,27 @@ try:
         assert result['rows'][0]['actual'][0]['actual'] == ['Merchant','Date'], result
         assert result['rows'][2]['actual'][0]['actual'] == ['Merchant'], result
         assert result['errors'] == [], result
+        disabled = page.evaluate('''async()=>{
+            const {runPageChecks}=await import('./page-runtime.mjs');
+            const bundle={html:'<button class="disabled" disabled>Disabled</button><fieldset disabled><legend><input id="legend" class="enabled"></legend><input class="disabled"><legend><input class="disabled"></legend><button class="disabled">Inherited</button></fieldset><select disabled class="disabled"><option>Choice</option></select><select><optgroup disabled class="disabled"><option class="disabled">Inherited option</option></optgroup><option class="enabled">Enabled</option></select><textarea class="disabled" disabled></textarea><button id="toggle">Disable me</button><button class="enabled" aria-disabled="true">ARIA only</button><div id="fake" disabled aria-disabled="true">Not a control</div>',css:'',js:`const button=document.querySelector('#toggle');button.onclick=()=>button.setAttribute('disabled','');Object.defineProperty(button,'disabled',{get:()=>true});Element.prototype.matches=()=>true;`};
+            const assertion=(selector,expected)=>({selector,property:'disabled',operator:'equals',expected});
+            return await runPageChecks(bundle,[
+                {name:'Native and inherited disabled controls',assertions:[{...assertion('.disabled',true),all:true}]},
+                {name:'Legend exception, enabled option and ARIA-only button',assertions:[{...assertion('.enabled',false),all:true},assertion('#toggle',false)]},
+                {name:'Non-control cannot pass true',assertions:[assertion('#fake',true)]},
+                {name:'Non-control cannot pass false',assertions:[assertion('#fake',false)]},
+                {name:'Missing control fails',assertions:[assertion('#absent',false)]},
+                {name:'Real action disables the control',steps:[{action:'click',selector:'#toggle'}],assertions:[assertion('#toggle',true)]}
+            ]);
+        }''')
+        assert [row['pass'] for row in disabled['rows']] == [True,True,False,False,False,True,True], disabled
+        assert disabled['rows'][1]['actual'][-1]['actual']==[False], disabled
+        assert 'native form control' in disabled['rows'][2]['actual'][0]['actual'][0]['error'], disabled
+        assert disabled['errors']==[], disabled
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(json.dumps(result, indent=2)+'\n')
-        print('PASS: real DOM default-any, all, explicit-first, count, missing-node and action-first semantics')
+            args.output.write_text(json.dumps({'node_semantics':result,'native_disabled':disabled}, indent=2)+'\n')
+        print('PASS: real DOM default-any, all, explicit-first, count, missing-node, native/inherited disabled, action and prototype-hardening semantics')
         browser.close()
 finally:
     server.shutdown()

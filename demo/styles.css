@@ -9,3 +9,5 @@
 
 /* Full-page editing preview uses the same isolated browser runtime as its checks. */
 .page-workspace{min-height:700px;background:#f9fafc}.page-preview{flex:1;min-height:560px;display:flex;flex-direction:column}.page-preview iframe{display:block;width:100%;flex:1;min-height:560px;border:0;background:white}.preview-state{font-size:11px;color:#637186;padding:10px 16px;margin:0;border-top:1px solid #dce2eb}.builder-footer>div{flex-wrap:wrap}.stacked .page-preview,.stacked .page-preview iframe{min-height:500px}@media(max-width:500px){.builder-footer{flex-wrap:wrap}}
+
+.error-details{display:inline-block;margin:8px 0;font-size:11px;white-space:normal}.notice .error-details{margin:0 0 0 12px}.notice{overflow-wrap:anywhere}#notice-message{white-space:pre-wrap}@media(max-width:500px){.notice .error-details{display:block;margin:8px 0 0}}
