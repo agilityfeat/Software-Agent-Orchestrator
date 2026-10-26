@@ -144,3 +144,32 @@ test('heterogeneous ANY values remain generic while explicit single observations
  for(const extra of [{first:true},{all:true},{selector:'#single'}])assert.throws(()=>modelChecks([value('Alpha',extra),value('Beta',extra)]),/contradict/);
  assert.equal(modelChecks([value('Alpha',{attribute:'data-a',property:'attribute',first:true}),value('Beta',{attribute:'data-b',property:'attribute',first:true})]).length,2);
 });
+
+
+test('verification re-executes only candidate checks and never reuses saved browser evidence',async()=>{
+ const c=await prepared();await c.run();const calls=[];c.execute=async(bundle,checks,options)=>{calls.push({bundle:structuredClone(bundle),checks:structuredClone(checks),signal:options.signal});return result(bundle,checks)};
+ await c.verify();assert.equal(calls.length,1);assert.deepEqual(calls[0].bundle,REPLACEMENT);assert.deepEqual(calls[0].checks,c.task.checks);assert.equal(calls[0].signal.aborted,false);
+ calls.length=0;await c.accept({base:ORIGINAL});assert.equal(calls.length,1);assert.deepEqual(calls[0].bundle,REPLACEMENT);assert.equal(c.task.status,'Done');
+});
+test('candidate dynamic failure blocks acceptance even when saved rows remain passing',async()=>{
+ const c=await prepared();await c.run();const oldEvidence=structuredClone(c.task.evidence);let calls=0;c.execute=async(bundle,checks)=>{calls++;assert.deepEqual(bundle,REPLACEMENT);const r=result(bundle,checks);r.rows[0].pass=false;r.rows[0].actual=['A changed current DOM'];return r};
+ await assert.rejects(()=>c.accept({base:ORIGINAL}),/no longer passes/);assert.equal(calls,1);assert.notEqual(c.task.status,'Done');assert.deepEqual(c.task.evidence,oldEvidence);
+});
+
+test('start over aborts old work, clears active or blocked tasks, and preserves an idle ready model',async()=>{
+ let release,cancels=0;const m={ready:true,pending:null,cancel(){cancels++;this.ready=false;},generate(){return new Promise(resolve=>release=resolve)}};
+ const c=new Controller({model:m,execute:async(...args)=>result(...args)});
+ const pending=c.plan({request:'First request',mode:'live',base:ORIGINAL});const signal=c.abort.signal;
+ c.restart();assert.equal(c.busy,false);assert.equal(c.task,null);assert.equal(signal.aborted,true);assert.equal(cancels,1);
+ release(JSON.stringify(PLAN));await assert.rejects(()=>pending,/cancelled/);assert.equal(c.task,null);
+ m.ready=true;c.task={status:'Blocked'};assert.equal(c.restart(),true);assert.equal(cancels,1);assert.equal(c.task,null);
+ m.generate=async role=>JSON.stringify(role==='Planner'?PLAN:role==='Coder'?{files:REPLACEMENT}:{summary:'Review',cases:[]});
+ await c.plan({request:'Fresh request',mode:'live',base:ORIGINAL});await c.run();assert.equal(c.task.status,'Review');
+ const old=c.task;c.restart();assert.equal(c.task,null);assert.equal(cancels,1);assert.equal(old.status,'Review');
+});
+
+test('main demo starts Coder without extended reasoning and reserves it for verified repairs',async()=>{
+ const calls=[];let builds=0;const m={cancel(){},async generate(role,prompt,options){calls.push({role,options});return JSON.stringify(role==='Planner'?PLAN:role==='Tester'?{summary:'Independent synthetic review.',cases:[]}:++builds===1?{edits:[]}:{files:REPLACEMENT});}};
+ const c=await prepared({model:m});await c.run();assert.equal(c.task.status,'Review');assert.equal(c.task.attempt,2);
+ assert.deepEqual(calls.filter(c=>c.role==='Coder').map(c=>c.options),[{strategy:'fast-initial',repair:false},{strategy:'fast-initial',repair:true}]);assert.ok(calls.filter(c=>c.role!=='Coder').every(c=>c.options===undefined));assert.ok(canAccept(c.task));
+});

@@ -12,11 +12,15 @@ export class LocalModel {
     this.ready = false;
     this.statusText = '';
     this.identity = structuredClone(MODEL_IDENTITY);
+    this.metrics = [];
+    this.lastMetrics = null;
+    this.activity = null;
   }
-  activity(event) { try { this.onActivity(event); } catch { /* Diagnostics must not interrupt inference. */ } }
+  emitActivity(event) { try { this.onActivity(event); } catch { /* Diagnostics must not interrupt inference. */ } }
   notify(phase, text, details = {}) {
+    this.activity = phase === 'working' ? structuredClone({...details, phase, text}) : null;
     this.onState({...details, phase, text});
-    if (this.pending) this.activity({type:'status', text, phase});
+    if (this.pending) this.emitActivity({...details, type:'status', text, phase});
     // Do not announce every byte update to the existing live region.
     if (text !== this.statusText) {this.statusText = text; this.onStatus(text);}
   }
@@ -25,9 +29,9 @@ export class LocalModel {
     this.identity = file ? {name:'Local Gemma model',artifact:null} : structuredClone(MODEL_IDENTITY);
     return this.call('load', {file}, 600000);
   }
-  generate(role, prompt) {
+  generate(role, prompt, options = {}) {
     if (!this.ready) throw Error('Load the local model first.');
-    return this.call('generate', {role, prompt}, 180000);
+    return this.call('generate', {role, prompt, options}, 180000);
   }
   async call(type, payload, timeout) {
     if (this.pending) throw Error('The shared model is already busy.');
@@ -37,16 +41,25 @@ export class LocalModel {
       // LiteRT-LM loads its WASM glue with importScripts(), which requires a classic worker.
       // model-worker.mjs uses dynamic import() for the SDK; keep that entrypoint classic-compatible.
       try {worker = new Worker(new URL('./model-worker.mjs', import.meta.url), {type: 'classic'});}
-      catch (error) {this.activity({type:'error',message:String(error.message || error)});this.notify('error', String(error.message || error)); throw error;}
+      catch (error) {this.emitActivity({type:'error',message:String(error.message || error)});this.notify('error', String(error.message || error)); throw error;}
       this.worker = worker;
       worker.onmessage = ({data}) => {
         // A terminated worker may already have queued a message. Never revive a cancelled load.
         if (this.worker !== worker || !this.pending) return;
+        if (data.type === 'diagnostic') {
+          if (this.pending.type === 'generate') this.emitActivity({type:'status', role:data.role, stage:data.stage, text:data.text});
+          return;
+        }
         if (data.type === 'status') {
           const allowed = this.pending.type === 'load'
             ? ['preparing', 'downloading', 'cached', 'local', 'initializing'] : ['working'];
           if (allowed.includes(data.phase)) this.notify(data.phase, data.text, data);
           return;
+        }
+        if (this.pending.type === 'generate' && data.metrics && typeof data.metrics === 'object') {
+          this.lastMetrics = structuredClone(data.metrics);
+          this.metrics.push(this.lastMetrics);
+          this.metrics = this.metrics.slice(-50);
         }
         if (data.error) {this.cancel(String(data.error), 'error'); return;}
         const expected = this.pending.type === 'load' ? 'loaded' : 'generated';
@@ -54,29 +67,30 @@ export class LocalModel {
         const pending = this.pending;
         this.pending = null;
         clearTimeout(pending.timer);
-        this.activity({type:'complete',operation:pending.type,output:data.text});
+        this.emitActivity({type:'complete',operation:pending.type,output:data.text});
         if (data.type === 'loaded') this.ready = true;
         this.notify('ready', `${this.identity.name} · ready`);
         pending.resolve(data.text);
       };
       worker.onerror = () => {
-        if (this.worker === worker) this.cancel('Local runtime failed to load. Check WebGPU and network access.', 'error');
+        if (this.worker === worker) this.cancel('Gemma runtime failed. Load Gemma again, then choose Start over.', 'error');
       };
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.cancel('Local model exceeded its deadline. Reload from cache and retry.', 'error'), timeout);
+      const deadlineMessage = type === 'load' ? 'Gemma did not finish loading in 10 minutes. Retry loading; its downloaded files are kept.' : 'Gemma did not finish this step in 3 minutes. Load Gemma again, then choose Start over. Its download is kept.';
+      const timer = setTimeout(() => this.cancel(deadlineMessage, 'error'), timeout);
       this.pending = {type, resolve, reject, timer};
-      this.activity({type:'start',operation:type,role:payload.role||'Model',inputChars:payload.prompt?.length||0});
+      this.emitActivity({type:'start',operation:type,role:payload.role||'Model',inputChars:payload.prompt?.length||0});
       try {this.worker.postMessage({type, ...payload});}
       catch (error) {this.cancel(String(error.message || error), 'error');}
     });
   }
-  cancel(message = 'Local model stopped. Reload to continue.', phase = 'stopped') {
+  cancel(message = 'Gemma stopped. Load Gemma again to continue; its download is kept.', phase = 'stopped') {
     this.worker?.terminate();
     this.worker = null;
     this.ready = false;
     if (this.pending) {clearTimeout(this.pending.timer); this.pending.reject(Error(message)); this.pending = null;}
-    this.activity({type:phase === 'error' ? 'error' : 'stopped',message});
+    this.emitActivity({type:phase === 'error' ? 'error' : 'stopped',message});
     this.notify(phase, message);
   }
 }

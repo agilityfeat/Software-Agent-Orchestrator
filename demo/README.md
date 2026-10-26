@@ -31,7 +31,20 @@ Describe a change, choose **Create plan**, review the proposed browser checks,
 then **Approve plan & run**. Compare **Candidate** and **Accepted** and inspect
 all three files in **Code**. **Accept change** reruns the reviewed checks before
 promoting the exact bundle. It saves only in this browser. Export workspace
-retains the accepted files, model responses, checks and run history.
+retains the accepted files, model responses, checks and run history, plus bounded
+local timing and activity counters.
+
+**Logs** opens the detailed live activity view without stopping agents. It shows
+role handoffs, real model activity, completed responses and browser checks. See
+[LOGS.md](./LOGS.md) for its bounded, in-memory diagnostic behavior.
+
+**Start over** cancels the current plan/build/checks and lets you enter a new
+request, preserving the accepted app, successful runs and downloaded model. An
+idle loaded model stays ready; stopping active inference releases its worker, so
+click **Load Gemma** again to initialize from the browser cache. **Reset demo**
+also works during a run and asks before restoring the sample app and clearing
+saved runs. Interrupted or blocked runs show their actual failure and recovery
+action. Late results cannot revive a cleared task.
 
 ## Full-page source and checks
 
@@ -55,13 +68,20 @@ current files and actual failures; Tester independently reviews the actual DOM
 results and may propose extra data-only checks. The host executes them in real
 browser DOMs. It never treats a model's pass flag as evidence. There are at most
 two Coder repair cycles, with raw role responses retained for diagnosis.
+The first build uses a short response without extended reasoning; repairs enable
+reasoning again. Streaming activity reports elapsed seconds, actual received
+updates and time without new output. It never shows invented completion
+percentages or thought text. Each model step still has a fixed three-minute
+deadline; progress does not extend it.
 
 The check DSL supports arbitrary CSS selectors, click/input/select/key/wait
 steps, and assertions on text, count, value, checked, attribute, visibility and
 computed style. Node assertions pass when any matched node satisfies them;
 `all:true` requires every match, and `first:true` inspects only the first. Count
-checks count all matches and actions target the first. No matching node fails a
-node assertion. Every top-level check starts in a fresh page with empty app
+checks count all matches and actions target the first. To count cells in one
+row, use `tbody tr:first-child td`; `tbody tr td` counts the entire table. No matching node fails a
+node assertion. Up to two checks run concurrently, each in its own new opaque
+frame. Every top-level check starts in a fresh page with empty app
 storage; its setup actions do not carry into another check. State-change checks
 must declare their own actions, and contradictory single-observation outcomes
 with identical actions are rejected before approval. Plans bind the check-semantics version; older evidence must be
@@ -70,7 +90,8 @@ use a bounded simple subset. Baseline results are retained for comparison; a
 behavior-preserving refactor is allowed. Exact source no-ops, missing check
 coverage, errors and failing assertions block acceptance. Source, plan and checks
 are bound to SHA-256 evidence; acceptance rechecks the same bundle and rejects
-stale or cancelled work.
+stale or cancelled work. Acceptance reruns fresh candidate checks; it does not
+repeat an unused baseline run.
 
 ## Isolated preview and persistence
 
@@ -104,6 +125,7 @@ Reset retains that legacy export and the model cache.
 ```sh
 node --test tests/*.test.mjs
 python3 tests/page-workspace-browser.py
+python3 tests/page-recovery-browser.py
 python3 tests/page-storage-browser.py
 python3 tests/page-check-semantics-browser.py
 python3 tests/page-check-isolation-browser.py
@@ -123,13 +145,24 @@ Pages uploads only `demo/`. This does not publish a user's generated app, change
 the Rust runtime, or add CI requirements. The SDK/model/WASM versions remain
 pinned; the default web model is pinned at commit
 `e6a3892a8c22cf87ff99583996149cf3cb32452b`. The browser engine context is
-8192 tokens. Coder enables model thinking with up to 4096 output tokens; Planner
-and Tester use up to 2048, with temperature 0.1. Coder's constrained SDK function
+8192 tokens. Coder's first attempt disables extended reasoning and uses up to
+2048 output tokens; its two repair attempts enable reasoning with up to 4096.
+Planner and Tester use up to 2048, with temperature 0.1. Coder's constrained SDK function
 declarations return patch/file data only: no tool is executed. Plain-text JSON
 remains a compatibility path, and all proposals pass the same source/browser
 gates. The previous E2B cache entry is retained under its original URL for
 rollback; the E4B download requires about 3.3 GB of free browser storage. No model
-speed or cross-device success rate is claimed.
+cross-device speed or success rate is claimed.
+
+`tests/browser-model-benchmark.html` is a manual real-model comparison page,
+excluded from the Pages artifact. It freezes an actual approved plan and base,
+compares identical Coder prompt hashes, retains failed attempts and exports
+per-role timing/token counters and fresh browser evidence. On one Mac Chrome
+comparison, the date request completed build plus QA in 39.4 seconds versus
+74.6 seconds with the prior reasoning settings; both passed 5/5 and were
+explicitly accepted. These are individual device observations, not a latency
+guarantee. `tests/page-runtime-performance-browser.py` separately measures DOM
+check throughput with synthetic fixtures; those results do not measure Gemma.
 
 ## Official developer workboard preview
 

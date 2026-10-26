@@ -34,23 +34,51 @@ export async function createPagePreview(container,bundle,{signal,storage={},onSt
   return {iframe,check:checks=>request('check',{checks:validateChecks(checks)}),inspect:()=>request('inspect'),destroy};
 }
 export async function runPageChecks(bundle,checks,options={}){
-  const normalized=validateChecks(checks),container=document.createElement('div');container.style.cssText='position:fixed;left:-20000px;top:0;width:1200px;height:900px;overflow:hidden;pointer-events:none';container.setAttribute('aria-hidden','true');document.body.append(container);
-  const rows=[],errors=[];let observations;
-  try{
-    // Each approved case owns its setup and gets the same clean app baseline.
-    // Only actions inside that case may share state; QA cannot poison later cases.
-    for(const check of normalized){
-      let preview;
+  const normalized=validateChecks(checks);
+  if(options.signal?.aborted)throw options.signal.reason||new DOMException('Cancelled','AbortError');
+  const container=document.createElement('div');container.style.cssText='position:fixed;left:-20000px;top:0;width:1200px;height:900px;overflow:hidden;pointer-events:none';container.setAttribute('aria-hidden','true');document.body.append(container);
+  const abortController=new AbortController(),active=new Set(),results=new Array(normalized.length);
+  let cursor=0,failure;
+  const stop=error=>{
+    failure??=error;abortController.abort();
+    for(const preview of active)preview.destroy();
+  };
+  const abort=()=>stop(options.signal.reason||new DOMException('Cancelled','AbortError'));
+  options.signal?.addEventListener('abort',abort,{once:true});
+  async function worker(slot){
+    while(!abortController.signal.aborted&&cursor<normalized.length){
+      const index=cursor++,check=normalized[index];let preview;
       try{
-        preview=await createPagePreview(container,bundle,{...options,storage:{},onStorage:()=>{}});
+        // Every case still executes in a new opaque frame and empty app store.
+        // Two independent workers overlap boot/waits without sharing test state.
+        preview=await createPagePreview(slot,bundle,{...options,signal:abortController.signal,storage:{},onStorage:()=>{}});
+        active.add(preview);
         const result=await preview.check([check]);
         if(!Array.isArray(result.rows)||result.rows.length!==2||result.rows[0]?.name!==check.name||!Array.isArray(result.errors))throw new Error('The browser check did not return complete evidence.');
-        rows.push(result.rows[0]);
-        for(const error of result.errors)errors.push(check.name+': '+error);
-        observations=result.observations;
-      }finally{preview?.destroy();}
+        results[index]=result;
+      }catch(error){stop(error);}
+      finally{if(preview){active.delete(preview);preview.destroy();}}
+    }
+  }
+  try{
+    const workers=[];
+    for(let i=0;i<Math.min(2,normalized.length);i++){
+      const slot=document.createElement('div');slot.style.cssText='position:absolute;inset:0;width:100%;height:100%';container.append(slot);workers.push(worker(slot));
+    }
+    // Wait for every worker to clean up before returning or rejecting.
+    await Promise.all(workers);
+    if(failure)throw failure;
+    const rows=[],errors=[];
+    for(let i=0;i<results.length;i++){
+      const result=results[i];
+      if(!result)throw new Error('The browser checks did not complete.');
+      rows.push(result.rows[0]);
+      for(const error of result.errors)errors.push(normalized[i].name+': '+error);
     }
     rows.push({name:'Page runs without browser errors',pass:errors.length===0,expected:[],actual:errors});
-    return {rows,errors,observations};
-  }finally{container.remove();}
+    return {rows,errors,observations:results.at(-1).observations};
+  }finally{
+    options.signal?.removeEventListener('abort',abort);abortController.abort();
+    for(const preview of active)preview.destroy();container.remove();
+  }
 }
