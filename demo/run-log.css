@@ -1,0 +1,30 @@
+.run-log-open {margin-left:10px;position:relative;flex-shrink:0}
+.run-log-open[data-busy="true"]::before {content:'';display:inline-block;width:6px;height:6px;margin-right:7px;border-radius:50%;background:#9ee4bf}
+.builder .panel-heading .tag {margin-left:auto}
+.run-log-dialog {width:min(850px,calc(100vw - 28px));max-width:none;max-height:85vh;max-height:85dvh;padding:0;border:1px solid #465471;border-radius:14px;background:#121b2a;color:#e6edf8;box-shadow:0 24px 80px #0009;color-scheme:dark}
+.run-log-dialog::backdrop {background:#050b16bb}
+.run-log-dialog[open] {display:flex;flex-direction:column}
+.run-log-dialog header,.run-log-dialog footer {display:flex;gap:12px;align-items:center;padding:16px 20px;flex-shrink:0}
+.run-log-dialog header {border-bottom:1px solid #2e3a50;justify-content:space-between}
+.run-log-dialog h2 {font-size:18px;margin:0;font-weight:600}
+.run-log-dialog button {cursor:pointer;border:1px solid #465471;border-radius:7px;padding:7px 11px;background:#1d293c;color:#e3eafa;font:inherit;font-size:12px}
+.run-log-dialog :focus-visible {outline:2px solid #c0aaff;outline-offset:3px}
+.run-log-status {padding:14px 20px;background:#1b273b;flex-shrink:0}
+.run-log-status strong {font-size:13px;color:#c6b5ff;display:block;overflow-wrap:anywhere}
+.run-log-status p {font-size:11px;line-height:1.6;color:#b3c0d8;margin:7px 0 0}
+.run-log-dialog[data-busy="true"] .run-log-status strong::before {content:'';display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:8px;background:#9ee4bf}
+.run-log-note {font-size:11px;line-height:1.5;color:#a9b7ce;margin:12px 20px;flex-shrink:0}
+.run-log-list {overflow:auto;overscroll-behavior:contain;min-height:100px;padding:0 20px 12px;font-size:12px;flex:1}
+.run-log-row {padding:12px 0;border-bottom:1px solid #2b3649;overflow-wrap:anywhere}
+.run-log-meta {display:flex;gap:12px;align-items:center;font-size:10px;color:#a5b6d0}
+.run-log-meta b {color:#d5c4ff}
+.run-log-row p {margin:6px 0 0;line-height:1.5;font-size:12px}
+.run-log-row details {margin-top:8px;color:#b5c4df}
+.run-log-row summary {cursor:pointer;font-size:11px}
+.run-log-row pre {white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-height:240px;overflow:auto;background:#0b1220;border-radius:6px;padding:12px;font:11px/1.6 ui-monospace,monospace;color:#dbe7fa}
+.run-log-dialog footer {border-top:1px solid #2e3a50;flex-wrap:wrap;font-size:11px}
+.run-log-dialog label {display:flex;gap:5px;align-items:center}
+.run-log-dialog input {accent-color:#bba5ff}
+.run-log-count {color:#a7b6cf;margin-right:auto}
+.run-log-feedback {font-size:11px;color:#9ee4bf}
+@media(max-width:520px){.run-log-dialog header,.run-log-dialog footer{padding:12px}.run-log-status{padding:12px}.run-log-list{padding:0 12px 12px}.run-log-note{margin:10px 12px}.run-log-open{padding:7px 9px}.run-log-dialog h2{font-size:16px}}

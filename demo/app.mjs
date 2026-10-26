@@ -1,3 +1,4 @@
+import {mountRunLog} from './run-log.mjs';
 import {renderAgents} from './agent-activity.mjs';
 import {DEFAULT_REQUEST,canonicalBundle,validateBundle,canAccept,successfulLiveRun,digest} from './page-contract.mjs';
 import {INITIAL_BUNDLE} from './page-baseline.mjs';
@@ -8,8 +9,9 @@ import {load,save} from './storage.mjs';
 const $=id=>document.getElementById(id);
 const text=(tag,content,className='')=>{const node=document.createElement(tag);node.textContent=content;if(className)node.className=className;return node;};
 let accepted=structuredClone(INITIAL_BUNDLE),acceptedStorage={},history=[],legacy=null,tab='plan',preview='accepted',saveQueue=Promise.resolve(),loading=false,previewEpoch=0,previewKey='',previewHandle=null,previewAbort=null,acceptedGeneration=0,candidateSession=null;
-const model=new LocalModel(value=>{$('model-status').textContent=value;updateControls();});
-const controller=new Controller({model,execute:runPageChecks,onChange:()=>{render();persist();}});
+const runLog=mountRunLog();
+const model=new LocalModel(value=>{$('model-status').textContent=value;updateControls();},undefined,event=>runLog.model(event));
+const controller=new Controller({model,execute:(bundle,checks,options)=>{runLog.observe(controller.task,controller.busy);return runLog.checks(runPageChecks,bundle,checks,options);},onChange:()=>{render();persist();}});
 function notice(message=''){$('notice').textContent=message;$('notice').hidden=!message;}
 function mode(){return $('mode').value;}
 function persist(){const value=structuredClone({schema:3,accepted,acceptedStorage,task:controller.task,history:history.slice(-5),legacy,layout:$('workspace').classList.contains('stacked')});saveQueue=saveQueue.catch(()=>{}).then(()=>save(value)).catch(()=>notice('Browser storage is unavailable. Export your workspace before closing.'));}
@@ -44,7 +46,7 @@ async function renderPreview(){
  try{const handle=await createPagePreview($('app-preview'),bundle,{storage,signal:previewAbort.signal,onStorage:value=>{if(!current())return;if(role==='accepted'&&source===canonicalBundle(accepted)){acceptedStorage=value;persist();}else if(role==='candidate'&&candidateSession?.identity===identity)candidateSession.storage=value;},onError:error=>{if(!current())return;const message=`App preview: ${String(error.message||error)}`;notice(message);if(role==='candidate'&&t===controller.task&&source===canonicalBundle(t.candidate)&&['Review','Done'].includes(t.status)){history=history.filter(run=>run.id!==t.id||run.hash!==t.hash);controller.block(Error(message));preview='accepted';void renderPreview();}}});if(!current()){handle.destroy();return;}previewHandle=handle;}
  catch(error){if(current()){previewKey='';notice(`App preview could not load: ${error.message}`);if(role==='candidate'&&t===controller.task&&['Review','Done'].includes(t.status)){history=history.filter(run=>run.id!==t.id||run.hash!==t.hash);controller.block(error);preview='accepted';void renderPreview();}}}
 }
-function render(){renderBoard();renderArtifact();updateControls();void renderPreview();}
+function render(){runLog.observe(controller.task,controller.busy);renderBoard();renderArtifact();updateControls();void renderPreview();}
 async function safely(action){notice();try{await action();}catch(error){notice(String(error.message||error));}finally{render();}}
 $('request-form').onsubmit=event=>{event.preventDefault();safely(async()=>{preview='accepted';candidateSession=null;tab='plan';await controller.plan({request:$('request').value,mode:mode(),base:accepted});});};
 $('request').oninput=()=>{if(controller.busy||mode()==='recorded')return;controller.epoch++;controller.abort?.abort();controller.task=null;preview='accepted';render();persist();};
