@@ -93,3 +93,24 @@ test('loader failures reject and never animate a ready engine', async () => {
     assert.equal(states.at(-1).phase, 'error');
   });
 });
+
+test('structured Coder proposals remain data and reject ambiguous or unknown calls',async()=>{
+ const source=await readFile(new URL('../demo/model-worker.mjs',import.meta.url),'utf8');
+ const context=vm.createContext({self:{},URL});new vm.Script(source).runInContext(context);
+ const evaluate=value=>vm.runInContext(`responseText(${JSON.stringify(value)},'Coder')`,context);
+ const proposal={edits:[{file:'js',find:'"old"',replace:'"new"\nnext();'}]};
+ assert.deepEqual(JSON.parse(evaluate({tool_calls:[{function:{name:'submit_app_patch',arguments:proposal}}]})),proposal);
+ assert.deepEqual(JSON.parse(evaluate({tool_calls:[{function:{name:'replace_app_files',arguments:{files:{html:'<main>new</main>'}}}}]})),{files:{html:'<main>new</main>'}});
+ for(const calls of [[{function:{name:'execute_code',arguments:proposal}}],[{function:{name:'submit_app_patch',arguments:'bad'}}],[{function:{name:'submit_app_patch',arguments:proposal}},{function:{name:'submit_app_patch',arguments:proposal}}]])assert.throws(()=>evaluate({tool_calls:calls}));
+ assert.equal(evaluate({content:[{type:'text',text:'{"edits":[]}'}]}),'{"edits":[]}');
+});
+
+
+test('full-app default pins E4B and retains the existing per-URL model cache',async()=>{
+ const source=await readFile(new URL('../demo/model-worker.mjs',import.meta.url),'utf8');
+ assert.match(source,/gemma-4-E4B-it-litert-lm\/resolve\/e6a3892a8c22cf87ff99583996149cf3cb32452b\/gemma-4-E4B-it-web\.litertlm/);
+ assert.match(source,/quota-estimate\.usage<3300000000/);
+ assert.match(source,/const CACHE='agent-demo-model-v1'/);
+ assert.doesNotMatch(source,/caches\.delete/);
+ const {MODEL_IDENTITY}=await import('../demo/model.mjs');assert.ok(source.includes(MODEL_IDENTITY.artifact));
+});

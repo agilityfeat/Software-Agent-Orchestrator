@@ -23,7 +23,7 @@ HTML = '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewp
 <section class="runtime-bar">
 <label class="mode-label">Execution <select id="mode"><option>Live · local Gemma</option></select></label>
 <div class="runtime-copy"><strong id="model-status" role="status">Local model not loaded</strong></div>
-<button id="load-model" class="primary">Load Gemma · ~2 GB</button><button id="cancel" hidden>Stop</button>
+<button id="load-model" class="primary">Load Gemma · ~3 GB</button><button id="cancel" hidden>Stop</button>
 </section>
 <script type="module">
 import {LocalModel} from './demo/model.mjs';

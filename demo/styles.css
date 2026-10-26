@@ -6,3 +6,6 @@
 /* Keep the developer preview link visible and usable alongside the demo controls. */
 .top-actions>a.quiet{display:inline-flex;align-items:center;min-height:34px;padding:9px 12px;border:1px solid #2c3548;border-radius:7px;font-size:12px;font-weight:600;white-space:nowrap}
 @media(max-width:720px){.topbar{flex-wrap:wrap}.top-actions{flex-wrap:wrap}.top-actions>a.quiet{font-size:11px}}
+
+/* Full-page editing preview uses the same isolated browser runtime as its checks. */
+.page-workspace{min-height:700px;background:#f9fafc}.page-preview{flex:1;min-height:560px;display:flex;flex-direction:column}.page-preview iframe{display:block;width:100%;flex:1;min-height:560px;border:0;background:white}.preview-state{font-size:11px;color:#637186;padding:10px 16px;margin:0;border-top:1px solid #dce2eb}.builder-footer>div{flex-wrap:wrap}.stacked .page-preview,.stacked .page-preview iframe{min-height:500px}@media(max-width:500px){.builder-footer{flex-wrap:wrap}}

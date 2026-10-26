@@ -1,4 +1,5 @@
 import {mountModelLoader} from './model-loader.mjs';
+export const MODEL_IDENTITY=Object.freeze({name:'Gemma 4 E4B',artifact:'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/e6a3892a8c22cf87ff99583996149cf3cb32452b/gemma-4-E4B-it-web.litertlm'});
 
 export class LocalModel {
   // The optional presenter keeps structured state testable without a browser or GPU.
@@ -9,6 +10,7 @@ export class LocalModel {
     this.pending = null;
     this.ready = false;
     this.statusText = '';
+    this.identity = structuredClone(MODEL_IDENTITY);
   }
   notify(phase, text, details = {}) {
     this.onState({...details, phase, text});
@@ -17,6 +19,7 @@ export class LocalModel {
   }
   start(file = null) {
     if (this.ready) return Promise.resolve();
+    this.identity = file ? {name:'Local Gemma model',artifact:null} : structuredClone(MODEL_IDENTITY);
     return this.call('load', {file}, 600000);
   }
   generate(role, prompt) {
@@ -49,7 +52,7 @@ export class LocalModel {
         this.pending = null;
         clearTimeout(pending.timer);
         if (data.type === 'loaded') this.ready = true;
-        this.notify('ready', 'Gemma 4 E2B · ready');
+        this.notify('ready', `${this.identity.name} · ready`);
         pending.resolve(data.text);
       };
       worker.onerror = () => {

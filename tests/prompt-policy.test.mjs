@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {DEFAULT_APP_REQUEST} from '../demo/presentation.mjs';
+import {DEFAULT_REQUEST as DEFAULT_APP_REQUEST} from '../demo/page-contract.mjs';
 import {DEFAULT_REQUEST,policyFromPrompt} from '../demo/prompt-policy.mjs';
 
 for(const [request,thresholdCents,receiptCents]of [

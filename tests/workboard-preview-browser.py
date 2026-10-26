@@ -44,7 +44,7 @@ window.fetch=(...args)=>{window.__qaTransport.fetch.push(String(args[0]));return
 window.EventSource=class{constructor(url){window.__qaTransport.events.push(String(url));throw Error('Unexpected EventSource');}};
 window.WebSocket=class{constructor(url){window.__qaTransport.sockets.push(String(url));throw Error('Unexpected WebSocket');}};""")
         page=context.new_page();requests=[];errors=[];console=[];failed=[];responses=[]
-        page.on('request',lambda r:requests.append({'url':r.url,'method':r.method,'type':r.resource_type}))
+        page.on('request',lambda r:requests.append({'url':r.url,'method':r.method,'type':r.resource_type,'frame':r.frame.url}))
         page.on('pageerror',lambda e:errors.append(str(e)))
         page.on('console',lambda m:console.append({'text':m.text,'location':m.location,'page':page.url}) if m.type=='error' else None)
         page.on('requestfailed',lambda r:failed.append({'url':r.url,'error':r.failure}))
@@ -130,7 +130,9 @@ return {rejections,unchanged:JSON.stringify(after)===before,taskCount:after.task
         assert not errors and not console and not failed,(errors,console,failed,[response for response in responses if response['status']>=400])
         assert all(request['method']=='GET' and '/api/' not in request['url'] and request['type']!='eventsource' for request in requests),requests
         assert all(response['status']<400 for response in responses),responses
-        assert all(request['url'].startswith(base+'/demo/') for request in requests),requests
+        # The adjacent full-SPA demo executes its module in an opaque preview blob.
+        # The workboard itself still has only same-origin static resources.
+        assert all(request['url'].startswith(base+'/demo/') or (request['url'].startswith('blob:null/') and request['type']=='script' and request['frame'].startswith(base+'/demo/preview/')) for request in requests),requests
         report.update({'requests':requests,'pageerrors':errors,'console_errors':console,'request_failures':failed,'passed':True})
         (args.screenshots/'result.json').write_text(json.dumps(report,indent=2)+'\n')
         print('PASS: official generated UI, six populated stages, detail/search/project/archive, Attention/System/Main, disabled mutations, GET-only frozen adapter, no auth/API/stream/socket/write traffic, copied asset parity, mobile width, nested relative links.')
